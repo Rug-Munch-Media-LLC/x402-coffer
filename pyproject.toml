@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "x402-coffer"
+version = "1.0.0"
+description = "Coffer — the self-hosted x402 payment facilitator. Accept 402 micropayments in one line of Python, on your own infrastructure."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Rug Munch Media LLC" }]
+keywords = ["x402", "payments", "micropayments", "fastapi", "ai-agents", "web3", "usdc"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+  # Dep floors (2026-08-21 pip-audit hardening, inherited from origin repo):
+  #   - fastapi>=0.141.1 (starlette PYSEC-2026 fixes; do NOT downgrade)
+  #   - pydantic>=2.13.4 (pre-2.7 email/deprecation DoS PYSEC-2024-2522)
+  #   - httpx>=0.28.1 (cookie-header leak fixed in 0.28.1)
+  "fastapi>=0.141.1",
+  "httpx>=0.28.1",
+  "pydantic>=2.13.4",
+]
+
+[project.optional-dependencies]
+evm = ["eth-account>=0.13.7"]
+solana = []  # SPL verification via solders/pynbundle planned; see ROADMAP
+server = ["uvicorn[standard]>=0.52.3"]
+mcp = ["fastmcp>=3.4.5"]
+redis = ["redis>=8.0.0"]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.15.19",
+  "eth-account>=0.13.7",
+  "redis>=8.0.0",
+  "fastmcp>=3.4.5",
+]
+
+[project.urls]
+Homepage = "https://git.rugmunch.io/RugMunchMedia/x402-coffer"
+
+[tool.hatch.build.targets.wheel]
+packages = ["coffer", "coffer_client"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

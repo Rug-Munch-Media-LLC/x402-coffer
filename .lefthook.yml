@@ -1,0 +1,438 @@
+# ── RugMunch CANONICAL Lefthook Configuration ─────────────────
+# Source of truth: standards/lefthook.yml
+# ALL repos symlink .lefthook.yml -> ../standards/lefthook.yml
+#
+# GLOBAL TIMEOUT: every command is killed after 10 minutes. Lefthook SIGTERMs
+# the command shell; node-based children (pyright/tsserver) can survive as
+# orphans — the host cron reaper (/root/scripts/reap-stale-tools.sh, every
+# 15 min) kills anything orphaned or older than 20 min. Never remove this.
+timeout: 600
+#
+# This single config handles ALL repo types via glob patterns:
+#   *.py              -> ruff, vulture, radon, interrogate, pip-audit, semgrep, pyright (Python repos)
+#   *.{ts,tsx,js,jsx} -> biome, oxlint, tsc, knip, attw (Frontend repos)
+#   package.json      -> publint (Frontend repos)
+#   *.sh              -> shellcheck (Infra repos)
+#   Dockerfile*       -> hadolint (Infra repos)
+#   *.sql             -> squawk (DB migration repos)
+#
+# Quick install:
+#   lefthook install
+#   lefthook run pre-commit    # test hooks
+#   lefthook run pre-push      # test push hooks
+#
+# NOTE: --no-verify bypasses client hooks. Server-side CI is the real gate.
+#
+# Full tool roster:
+#   Python lint:        ruff, mypy, pyright, bandit, semgrep
+#   Python quality:     vulture (dead code), radon (complexity), interrogate (docstrings)
+#   Python deps:        deptry (freshness), pip-audit (vulnerabilities)
+#   Frontend lint:      biome, oxlint, tsc --noEmit
+#   Frontend quality:   knip (dead code), publint (pkg.json), attw (type exports)
+#   Container/Infra:    hadolint (Dockerfile), shellcheck (.sh), squawk (.sql)
+#   Security universal: gitleaks, envsitter, methodology-leak
+#
+# HOW TO ADD REPO-SPECIFIC OVERRIDES:
+# If a repo needs EXTRA hooks on top of canonical, create
+# .lefthook.local.yml in the repo root. Lefthook merges it
+# automatically. Example:
+#
+#   pre-commit:
+#     commands:
+#       my-custom-check:
+#         run: ./scripts/my-check.sh
+
+pre-commit:
+  parallel: true
+  commands:
+    # -- AI Test Oracle advisory (PYTHON repos, opt-in) ---------
+    # Fires when staged test files match a repo's .critical-paths list.
+    # Advisory only; repos promote to blocking via .lefthook.local.yml.
+    test-oracle-check:
+      glob: "tests/**/*.py"
+      run: bash scripts/check-test-oracle.sh "{staged_files}" 2>/dev/null || true
+
+    # -- Methodology leak detection (UNIVERSAL) -----------------
+    methodology-leak:
+      run: bash scripts/pre-commit-methodology-check.sh
+      skip:
+        - merge
+        - rebase
+
+    # -- BLOCK .env files (UNIVERSAL) --------------------------
+    # Blocks .env files git would actually TRACK. Local runtime .env files
+    # covered by .gitignore are legitimate (e.g. chain-indexer) and must
+    # not block commits — gitleaks --staged remains the content backstop.
+    no-env-files:
+      run: |
+        VIOLATIONS=""
+        for f in $(find . -maxdepth 3 -name '.env' -not -name '.env.example' \
+          -not -path './.git/*' \
+          -not -path '*/node_modules/*' \
+          -not -path '*/venv/*' \
+          -not -path '*/.venv/*' \
+          -not -path '*/__pycache__/*' \
+          -not -path '*/bridge/.env' \
+          -not -path './dockflare/.env'); do
+          git check-ignore -q "$f" 2>/dev/null || VIOLATIONS="$VIOLATIONS  $f"$'\n'
+        done
+        if [ -n "$VIOLATIONS" ]; then
+          echo "ERROR: trackable .env file(s) found:"
+          printf "$VIOLATIONS"
+          echo "Move secrets to gopass. Run: gopass show <path>"
+          exit 1
+        fi
+      skip:
+        - merge
+        - rebase
+
+    # -- Secret scanning (UNIVERSAL) ---------------------------
+    # Uses per-repo .gitleaks.toml (supports repo-specific allowlists);
+    # falls back to canonical standards config.
+    gitleaks:
+      run: |
+        if [ -f .gitleaks.toml ]; then
+          gitleaks protect --staged --config .gitleaks.toml --verbose
+        elif [ -f ../standards/.gitleaks.toml ]; then
+          gitleaks protect --staged --config ../standards/.gitleaks.toml --verbose
+        fi
+
+    # -- envsitter validation (UNIVERSAL) ----------------------
+    envsitter:
+      run: envsitter validate --file .env 2>/dev/null || true
+
+    # -- Python lint (PYTHON repos) ---------------------------
+    ruff:
+      glob: "*.py"
+      run: ruff check --fix {staged_files} && ruff format {staged_files}
+      stage_fixed: true
+
+    # -- Python dead code detection (PYTHON repos) -------------
+    vulture:
+      glob: "*.py"
+      run: vulture {staged_files} 2>/dev/null || echo "vulture check complete (see warnings above)"
+
+    # -- Python complexity analysis (PYTHON repos) -------------
+    radon:
+      glob: "*.py"
+      run: radon cc {staged_files} -a -nb 2>/dev/null || true
+
+    # -- Python docstring coverage (PYTHON repos) --------------
+    # Scans repo root so per-repo pyproject [tool.interrogate] config
+    # (excludes, thresholds) applies. Explicit staged-file paths bypass
+    # that config and false-positive on test files.
+    interrogate:
+      glob: "*.py"
+      run: "interrogate . --fail-under=60 2>/dev/null || echo 'interrogate: docstring coverage below threshold'"
+
+    # -- Dependency vulnerability scan (PYTHON repos) ----------
+    pip-audit:
+      glob: "*.py"
+      run: |
+        if [ -f "requirements*.txt" ] || [ -f "pyproject.toml" ]; then
+          pip-audit --severity high --desc 2>/dev/null || echo "pip-audit: vulnerabilities found (run manually to review)"
+        fi
+
+    # -- SAST via semgrep (PYTHON repos) -----------------------
+    semgrep:
+      glob: "*.py"
+      run: |
+        if [ -f ".semgrep.yml" ] || [ -f ".semgrep.toml" ]; then
+          semgrep --config=auto --metrics=off --error --quiet {staged_files} 2>/dev/null || true
+        fi
+
+    # -- Python type check via pyright (PYTHON repos, faster alternative) --
+    pyright:
+      glob: "*.py"
+      run: |
+        if [ -f "pyproject.toml" ] && command -v pyright &>/dev/null; then
+          pyright {staged_files} 2>/dev/null || true
+        fi
+
+    # -- Frontend lint (FRONTEND repos) -----------------------
+    biome:
+      glob: "*.{ts,tsx,js,jsx,json,css}"
+      run: npx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+    oxlint:
+      glob: "*.{ts,tsx,js,jsx}"
+      run: npx oxlint@1.79.0 --max-warnings=0 {staged_files}
+
+    # -- Frontend package.json validation (FRONTEND repos) -----
+    publint:
+      glob: "package.json"
+      run: npx publint@0.3.24 2>/dev/null || true
+
+    # -- Frontend type export validation (FRONTEND repos) ------
+    attw:
+      glob: "*.{ts,tsx}"
+      run: |
+        if [ -f "package.json" ]; then
+          npx attw@0.18.5 --pack . 2>/dev/null || true
+        fi
+
+    # -- Shell lint (INFRA repos) -----------------------------
+    shellcheck:
+      glob: "*.sh"
+      run: shellcheck {staged_files}
+
+    # -- Dockerfile lint (INFRA repos) ------------------------
+    hadolint:
+      glob: "Dockerfile*"
+      run: hadolint {staged_files}
+
+    # -- SQL migration lint (DB repos) ------------------------
+    squawk:
+      glob: "*.sql"
+      run: squawk {staged_files} 2>/dev/null || echo "Squawk not available — skipping SQL lint"
+
+    # -- SQL lint, general (ClickHouse + Postgres + ad-hoc) ----
+    # Complements Squawk (migrations-only). Blocking: cheap, low FP.
+    sqlfluff:
+      glob: "*.sql"
+      run: |
+        if command -v sqlfluff >/dev/null 2>&1; then
+          sqlfluff lint --dialect postgres {staged_files} 2>/dev/null || \
+          sqlfluff lint --dialect ansi {staged_files} || echo "[sqlfluff] findings above"
+        else
+          echo "sqlfluff not installed — pipx install sqlfluff"
+        fi
+
+    # -- Dependency supply-chain check (UNIVERSAL) -------------
+    # Blocks hallucinated/typosquatted/vulnerable deps AT COMMIT TIME.
+    # AI agents invent package names — this is the gate that stops them.
+    osv-deps:
+      glob: "{requirements*.txt,Pipfile.lock,poetry.lock,package-lock.json,pnpm-lock.yaml,yarn.lock,Cargo.lock,go.mod}"
+      run: |
+        if command -v osv-scanner >/dev/null 2>&1; then
+          FILES=$(printf '%s\n' {staged_files} | grep -E '(requirements.*\.txt|Pipfile\.lock|poetry\.lock|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|go\.mod)$' | tr '\n' ' ')
+          if [ -n "$FILES" ]; then
+            osv-scanner scan source $FILES || echo "[osv] vulnerable deps in lockfile — advisory at commit; CI blocks triaged diffs; major bumps in work order"
+          fi
+        else
+          echo "osv-scanner not installed — install from google/osv-scanner releases"
+        fi
+
+pre-push:
+  parallel: true
+  commands:
+    # -- Methodology leak detection (UNIVERSAL) -----------------
+    methodology-leak:
+      run: bash scripts/pre-commit-methodology-check.sh
+
+    # -- Full-repo secret scan (UNIVERSAL) --------------------
+    # Uses per-repo .gitleaks.toml (supports repo-specific allowlists);
+    # falls back to canonical standards config.
+    gitleaks-full:
+      run: |
+        if [ -f .gitleaks.toml ]; then
+          gitleaks detect --source . --no-git --config .gitleaks.toml -v
+        elif [ -f ../standards/.gitleaks.toml ]; then
+          gitleaks detect --source . --no-git --config ../standards/.gitleaks.toml -v
+        fi
+
+    # -- Python type check (PYTHON repos) ---------------------
+    # Prefer the project's venv mypy (matches CI) so a stale global
+    # /usr/local/bin/mypy with older type stubs can't disagree with the
+    # version pinned in pyproject.toml.
+    mypy:
+      glob: "*.py"
+      run: |
+        MYPY_BIN="mypy"
+        if [ -x ".venv/bin/mypy" ]; then MYPY_BIN=".venv/bin/mypy"; fi
+        # Incremental: only .py files in this push ({all_files} = lefthook template).
+        # Full-src has 1.6k pre-existing errors — full-dir gate can never pass.
+        PYFILES=$(printf '%s\n' {all_files} | grep '\.py$' | grep -v '^tests/' || true)
+        if [ -n "$PYFILES" ]; then
+          # Advisory at pre-push (CI enforces). Standards scripts carry type debt.
+          "$MYPY_BIN" $PYFILES --ignore-missing-imports --follow-imports=silent || echo "[mypy] findings above — enforced in CI"
+        fi
+
+    # -- Python type check via pyright (PYTHON repos, faster alternative) --
+    # Scoped to pushed files: a full `pyright .` walk includes .venv and gets
+    # SIGTERM'd by the hook runner before `|| true` can apply (2026-08-23).
+    pyright:
+      glob: "*.py"
+      run: |
+        if command -v pyright &>/dev/null; then
+          FILES=$(printf '%s\n' {all_files} | grep '\.py$' | grep -v '^\.venv/' || true)
+          if [ -n "$FILES" ]; then
+            pyright $FILES 2>/dev/null || true
+          fi
+        fi
+
+    # -- Python security scan (PYTHON repos) ------------------
+    bandit:
+      glob: "*.py"
+      run: |
+        # Incremental: only .py files in this push ({all_files} = lefthook template).
+        PYFILES=$(printf '%s\n' {all_files} | grep '\.py$' | tr '\n' ' ' || true)
+        if [ -n "$PYFILES" ]; then
+          # Advisory at pre-push (CI enforces).
+          bandit -r $PYFILES -ll || echo "[bandit] findings above — enforced in CI"
+        elif [ -d "app/" ]; then
+          bandit -r app/ -ll
+        elif [ -d "src/" ]; then
+          bandit -r src/ -ll
+        fi
+
+    # -- Python dep freshness (PYTHON repos) ------------------
+    deptry:
+      glob: "*.py"
+      run: deptry . 2>/dev/null || echo "deptry not available — skipping"
+
+    # -- Python dep vulnerability scan (PYTHON repos) ---------
+    pip-audit:
+      glob: "*.py"
+      run: |
+        if [ -f "requirements*.txt" ] || [ -f "pyproject.toml" ]; then
+          pip-audit --severity high 2>/dev/null || true
+        fi
+
+    # -- Python dead code full scan (PYTHON repos) ------------
+    vulture:
+      glob: "*.py"
+      run: |
+        if [ -d "app/" ]; then
+          vulture app/ --min-confidence 80 2>/dev/null || true
+        elif [ -d "src/" ]; then
+          vulture src/ --min-confidence 80 2>/dev/null || true
+        fi
+
+    # -- Python docstring coverage full scan (PYTHON repos) ---
+    interrogate:
+      glob: "*.py"
+      run: |
+        if [ -d "app/" ]; then
+          interrogate app/ --fail-under=60 2>/dev/null || true
+        elif [ -d "src/" ]; then
+          interrogate src/ --fail-under=60 2>/dev/null || true
+        fi
+
+    # -- SAST full scan via semgrep (PYTHON/FRONTEND repos) ---
+    semgrep:
+      run: |
+        if [ -f ".semgrep.yml" ] || [ -f ".semgrep.toml" ]; then
+          semgrep --config=auto --metrics=off --error . 2>/dev/null || true
+        fi
+
+    # -- Frontend type check (FRONTEND repos) -----------------
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: |
+        if [ -f "tsconfig.json" ]; then
+          npx tsc --noEmit
+        fi
+
+    # -- Frontend type export validation (FRONTEND repos) -----
+    attw:
+      glob: "*.{ts,tsx}"
+      run: |
+        if [ -f "package.json" ]; then
+          npx attw@0.18.5 --pack . 2>/dev/null || true
+        fi
+
+    # -- Run tests (ALL repos — detect runner) ----------------
+    test:
+      run: |
+        if [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "setup.cfg" ]; then
+          python3 -m pytest tests/ -x -q -m "not integration" 2>/dev/null || true
+        elif [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ]; then
+          npx vitest run --reporter=verbose 2>/dev/null || true
+        elif [ -f "jest.config.ts" ] || [ -f "jest.config.js" ]; then
+          npx jest --passWithNoTests 2>/dev/null || true
+        fi
+      skip:
+        - merge
+
+    # -- Frontend dep audit (FRONTEND repos) ------------------
+    audit:
+      glob: "package.json"
+      run: pnpm audit --prod --audit-level=high 2>/dev/null || npm audit --production --audit-level=high 2>/dev/null || true
+
+    # -- Frontend dead code (FRONTEND repos) ------------------
+    knip:
+      glob: "*.{ts,tsx}"
+      run: npx knip --no-progress 2>/dev/null || true
+
+    # -- Frontend package.json validation (FRONTEND repos) -----
+    publint:
+      glob: "package.json"
+      run: npx publint@0.3.24 2>/dev/null || true
+
+    # -- Live-secret verification (UNIVERSAL) -------------------
+    # Gitleaks pattern-matches; trufflehog VERIFIES leaked creds are
+    # active against the provider. Blocks only verified-live secrets in
+    # the pushed range — historical findings are CI's job.
+    trufflehog-verified:
+      run: |
+        if command -v trufflehog >/dev/null 2>&1; then
+          RANGE=$(git rev-parse @{u} 2>/dev/null || echo "")
+          if [ -n "$RANGE" ]; then
+            trufflehog git file://. --since-commit "$RANGE" --results=verified --fail --no-update || {
+              echo "TRUFFLEHOG: verified-LIVE secret(s) in pushed commits. Rotate now (gopass)."
+              exit 1
+            }
+          else
+            echo "no upstream — skipping incremental secret verification"
+          fi
+        else
+          echo "trufflehog not installed — install from trufflesecurity/trufflehog releases"
+        fi
+
+    # -- Module boundary contracts (PYTHON repos, opt-in) -------
+    # Enforces architecture: domains stay independent, routers stay thin.
+    # Active only where .importlinter / [importlinter] config exists.
+    import-boundaries:
+      glob: "*.py"
+      run: |
+        if command -v lint-imports >/dev/null 2>&1; then
+          if grep -qE '\[importlinter\]' pyproject.toml setup.cfg .importlinter 2>/dev/null; then
+            # Prefer venv linter — global versions may differ in transitive
+            # ignore matching and false-fail on valid configs (2026-08-24).
+            LINT_IMPORTS_BIN="lint-imports"
+            if [ -x ".venv/bin/lint-imports" ]; then LINT_IMPORTS_BIN=".venv/bin/lint-imports"; fi
+            "$LINT_IMPORTS_BIN" || {
+              echo "IMPORT-LINTER: architecture boundary violated (see above)."
+              exit 1
+            }
+          fi
+        fi
+
+    # -- Security/PII scan (UNIVERSAL, advisory at push) --------
+    # Bearer flags sensitive-data flows. Advisory here (noisy on first
+    # runs); BLOCKING on new findings in CI via bearer scan --diff.
+    bearer-scan:
+      glob: "*.{py,ts,tsx,js,jsx,go,sql}"
+      run: |
+        if command -v bearer >/dev/null 2>&1; then
+          bearer scan --scanner=sast,secrets --hide-progress . 2>/dev/null | tail -20 || true
+          echo "[bearer] advisory at push — CI blocks new findings via --diff"
+        fi
+
+    # -- SBOM vulnerability match (UNIVERSAL, advisory) ---------
+    grype-sbom:
+      run: |
+        if command -v grype >/dev/null 2>&1 && command -v syft >/dev/null 2>&1; then
+          syft dir:. -o cyclonedx-json=/tmp/sbom-push.json 2>/dev/null && \
+            grype sbom:/tmp/sbom-push.json --fail-on high 2>/dev/null | tail -15 || \
+            echo "[grype] advisory at push — CI blocks on high+"
+        fi
+
+commit-msg:
+  commands:
+    commitlint:
+      run: commitlint --edit "$1"
+    # -- AI attribution advisory (AI Test Oracle Policy rule 5) --
+    # feat/fix commits should carry `Assisted-by: <agent> <model>` when
+    # AI-authored. Advisory only — prints a hint, never blocks.
+    ai-attribution:
+      run: |
+        msg=$(cat "$1" 2>/dev/null || true)
+        case "$msg" in
+          feat:*|fix:*|perf:*|refactor:*)
+            echo "$msg" | grep -qi "^Assisted-by:" || \
+              echo "ℹ️  AI-authored? add trailer: 'Assisted-by: <agent> <model>' (advisory)"
+            ;;
+        esac

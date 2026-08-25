@@ -1,0 +1,116 @@
+# ── Python .gitignore (canonical) ──────────────────────────────
+# Apply to ANY Python repo. Source of truth: standards/templates/gitignore-python.template
+#
+# Order matters — earlier patterns win.
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+!.env.example.template
+*.pem
+*.key
+*.crt
+*.p12
+.secrets/
+.gopass/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.coverage.xml
+.tox/
+.nox/
+.cache/
+
+# Build / dist
+dist/
+build/
+*.whl
+*.tar.gz
+*.zip
+html/
+public/
+
+# Virtual envs
+venv/
+.venv/
+env/
+.python-version
+
+# Test artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cursor/
+
+# Type checking
+.dmypy.json
+dmypy.json
+
+# Migrations (keep folders, ignore compiled)
+# migrations/  (intentionally not ignored)
+
+# Logs
+*.log
+logs/
+
+# Data blobs (use R2 / S3 instead)
+*.parquet
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+
+# Model weights
+*.bin
+*.safetensors
+*.pt
+*.onnx
+*.gguf
+*.h5
+*.pkl
+*.joblib
+
+# Sub-repos / nested project roots
+/backend/
+/frontend/
+/client/
+/server/
+/api/
+/web/
+/app-web/
+
+# Forgejo
+.forgejo/
+
+# CI/CD caches
+.dvc/
+.pipeline-cache/
+
+# LFS pointer placeholder (real LFS objects NOT in repo)
+*.lfs
+
+# Temp files
+tmp/
+temp/
+.tmp/
