@@ -1,6 +1,6 @@
 """x402 — Solana SPL stablecoin payment verifier (USDC / USDT).
 
-Mirror of ``/srv/work/repos/x402-py/x402/solana_verifier.py`` (MIT, Rug Munch
+Reference implementation: x402-py solana_verifier (MIT, Rug Munch
 Media LLC), extended for production completeness:
 
 - SPL ``transferChecked`` destinations are TOKEN ACCOUNTS (associated token
