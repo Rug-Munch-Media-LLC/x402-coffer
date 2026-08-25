@@ -246,3 +246,7 @@ external dependency**.
 ## Standards
 
 Follows https://git.rugmunch.io/RugMunchMedia/standards · MIT License
+
+## FAQ
+
+See [docs/FAQ.md](docs/FAQ.md) for frequently asked questions.
