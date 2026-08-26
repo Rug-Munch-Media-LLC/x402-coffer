@@ -83,16 +83,14 @@ client reads **every** payable pair and chooses.
 
 > **3 live SVM options.**
 
-### TRON — scaffolded (`tron:mainnet`)
+### TRON — live (`tron:mainnet`, TRC-20 Transfer event)
 
 | Network (CAIP-2) | USDT | TRX | Status |
 | ---------------- | :--: | :-: | ------ |
-| `tron:mainnet` | ✅ | ✅ | `verified:false` — structure/price/asset validated; needs a facilitator impl |
+| `tron:mainnet` | ✅ | ✅ | `live` — TRC-20 Grid verifier, gettransactioninfobyid USDT Transfer event |
 
-**[6 live networks, 25 live (network, asset) options.]** [REVIEW]
-(arithmetic) rows sum to 25, not the 24 previously advertised; verify the
-`accepts[]` set matches before merge. Honest status is exposed on
-`/v1/x402/health`: `evm=live`, `solana=live`, `tron=scaffolded:needs_facilitator`.
+**[6 live networks, 25 live (network, asset) options.]**
+Honest status is exposed on `/v1/x402/health`: `evm=live`, `solana=live`, `tron=live`.
 
 > [REVIEW] DAI and MATIC are priced in the oracle but **not yet** in the
 > advertised `accepts[]` matrix. We document only the live/payable set above.
@@ -104,10 +102,11 @@ client reads **every** payable pair and chooses.
 We will not overclaim. This repo was fixed so that nothing is reported verified
 unless it is. Concretely:
 
-- **Scaffolded paths are never reported verified.** TRON, the `upto` scheme, and
+- **Scaffolded paths are never reported verified.** The `upto` scheme and
   `batch-settlement` are structural work only: shape/price/asset are validated,
-  and `/v1/x402/health` reports `tron=scaffolded:needs_facilitator` until a real
-  facilitator impl is registered. `verified:false` is the honest answer.
+  and `/v1/x402/health` reports `upto=scaffolded`,
+  `batch-settlement=scaffolded` until a real facilitator impl is registered.
+  `verified:false` is the honest answer.
 - **Verifying is not settling.** EIP-7702 self-verify reads **on-chain receipts
   only**; Solana's SPL RPC verifies **on-chain receipts only**. Neither
   broadcasts a settlement. Returning `success:true` there would *fabricate* a
