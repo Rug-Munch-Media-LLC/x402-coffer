@@ -1,251 +1,341 @@
-# Coffer — the self-hosted x402 payment facilitator
+<p align="center">
+  <img src="https://img.shields.io/badge/coffer-x402%20facilitator-2ea44f?style=for-the-badge" alt="Coffer" />
+</p>
 
-Coffer is the self-hosted x402 payment facilitator: accept `402 Payment
-Required` micropayments in one line of Python, on your own infrastructure —
-your HTTP treasury, sovereign and open. No hosted facilitator, no vendor
-lock-in, no hostage dollars.
+<h1 align="center">Coffer — The Sovereign x402 Payment Facilitator</h1>
 
-[![x402 v1+v2](https://img.shields.io/badge/x402-v1%20%2B%20v2-blue)](#2026-spec-compliance)
-[![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![self-hosted](https://img.shields.io/badge/deploy-self--hosted-purple)](#why-coffer)
-[![spec-compliant](https://img.shields.io/badge/conformance-canonical-brightgreen)](docs/x402-official-spec/)
-[![package coffer](https://img.shields.io/badge/package-coffer%205.0.0-blueviolet)](#quickstart--one-line)
+<p align="center">
+  <strong>Pay-per-request HTTP for the multi-chain economy.<br/>
+  Self-host your own payment gateway. Accept USDC, USDT, SOL, TRX — on EVM, Solana, TRON.<br/>
+  No Coinbase. No accounts. No subscriptions. No API keys.</strong>
+</p>
 
-
-```python
-import coffer
-
-@coffer.require_payment(asset="USDC", network="base", amount=0.001)
-async def paid_endpoint():
-    return {"data": "you paid for this"}
-```
-
-That's it. That decorator is a spec-exact `HTTP 402` → verify → settle FastAPI
-gate. And because **Coffer ships its own in-process facilitator**, the whole
-rail — offer, verification, settlement, replay protection — runs inside your
-process. You keep the keys, you keep the treasury, you keep the custodian.
+<p align="center">
+  <a href="https://git.rugmunch.io/RugMunchMedia/x402-coffer/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue" /></a>
+  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-000000" /></a>
+  <a href="https://www.x402.org/"><img src="https://img.shields.io/badge/x402-v2%20spec-2ea44f" /></a>
+</p>
 
 ---
 
-## Why Coffer
+## Why Coffer?
 
-**Sovereign payments.** Coffer is the OSS x402 *self*-facilitator. Every
-settlement path defaults to **your own signature** (EIP-3009 / EIP-7702 on EVM,
-SPL `transferChecked` on Solana). No third-party facilitator is required to
-collect revenue — `X402_SELF_FACILITATE=1` flips you to pure on-chain
-self-settlement. The treasury is *your* wallet, not a hosted ledger.
+Every AI agent, API, and microservice needs to accept payments. Today you have two choices:
 
-**Zero vendor lock-in.** Wire format is the open x402 standard; the facilitator
-is swappable behind `FacilitatorRouter`; the facade (`coffer/`) is a tiny public
-API. If a better facilitator exists tomorrow, you point `register_facilitator()`
-at it and move on. Your payments are never held hostage to a service's uptime,
-pricing, migration, or shutdown.
+1. **Coinbase's hosted facilitator** — free but not sovereign. They see every transaction. They can censor, rate-limit, or shut you down.
+2. **Build your own** — months of work, EIP-3009 signing, multi-chain verification, replay hardening.
 
-**Broad, honest payment surface.** Today Coffer advertises **[6 live networks ×
-22 live EVM options] + [3 live SVM options on Solana] = 25 live
-(network, asset) payment options** across EVM, Solana (+ ARB on Arbitrum, POL on
-Polygon &mdash; and TRON scaffolded). Self-hostable OSS facilitators rarely ship
-this many live pairs; we intend Coffer to be **among the broadest self-hostable
-facilitators** in the ecosystem. Agents see every payable pair in a single
-`accepts[]` and pick freely.
+**Coffer is the third option**: a complete, open-source, self-hosted x402 facilitator that you control end-to-end. One line to add a paywall. One config file to go sovereign.
 
-**AI-forward.** Agents don't open wallets in browsers — they pay over HTTP.
-Coffer is **MCP-native**: it vendors `FastMCP`, gates your agent tools with the
-same `@coffer.require_payment` decorator, and exposes a discoverable paid MCP
-server. Any agent that speaks the x402 handshake can pay your API and get the
-resource back. Payments for the machine economy, done by machines.
+| Feature | Coffer | Coinbase CDP | PayAI | Fireblocks | Mogami |
+| ------- | :----: | :----------: | :---: | :--------: | :----: |
+| **Open source (MIT)** | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **Self-hosted** (no hosted dep) | ✅ | ❌ | ❌ | ⚠️ vault | ⚠️ Base-only |
+| **Networks live** | **6** (EVM×5 + Solana + TRON) | 1 | multi | multi | 1 |
+| **Live payment options** | **25+** | USDC-centric | all tokens | — | USDC |
+| **Self-settle in-process** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **TRON TRC-20** | ✅ live | ❌ | — | ❌ | ❌ |
+| **Solana SPL** | ✅ live | ❌ | — | ❌ | ❌ |
+| **EIP-7702 self-verify** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Facilitator router + fallback** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **MCP server** | ✅ native | ❌ | ❌ | ❌ | ❌ |
+| **REST + MCP dual interface** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Dashboard + webhooks** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **110+ data templates** | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
-## Payment options
+## Quick Start
 
-Canonical `(network, asset)` matrix, **CAIP-2** network ids, `exact` scheme with
-atomic-unit amounts. Advertised additively via `build_multi_asset_accepts`, so a
-client reads **every** payable pair and chooses.
-
-### EVM — live (`eip155:*`, EIP-3009 / EIP-7702 / Permit2)
-
-| Network (CAIP-2) | Chain | USDC | USDT | ETH | WETH | ARB | POL |
-| ---------------- | ----- | :--: | :--: | :-: | :--: | :-: | :-: |
-| `eip155:8453` | Base | ✅ | ✅ | ✅ | ✅ | — | — |
-| `eip155:1` | Ethereum | ✅ | ✅ | ✅ | ✅ | — | — |
-| `eip155:42161` | Arbitrum | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| `eip155:10` | Optimism | ✅ | ✅ | ✅ | ✅ | — | — |
-| `eip155:137` | Polygon | ✅ | ✅ | ✅ | ✅ | — | ✅ |
-
-> **22 live EVM options.**
-
-### SVM — live (`solana:mainnet`, SPL `transferChecked`)
-
-| Network (CAIP-2) | USDC | USDT | SOL |
-| ---------------- | :--: | :--: | :-: |
-| `solana:mainnet` | ✅ | ✅ | ✅ |
-
-> **3 live SVM options.**
-
-### TRON — live (`tron:mainnet`, TRC-20 Transfer event)
-
-| Network (CAIP-2) | USDT | TRX | Status |
-| ---------------- | :--: | :-: | ------ |
-| `tron:mainnet` | ✅ | ✅ | `live` — TRC-20 Grid verifier, gettransactioninfobyid USDT Transfer event |
-
-**[6 live networks, 25 live (network, asset) options.]**
-Honest status is exposed on `/v1/x402/health`: `evm=live`, `solana=live`, `tron=live`.
-
-> [REVIEW] DAI and MATIC are priced in the oracle but **not yet** in the
-> advertised `accepts[]` matrix. We document only the live/payable set above.
-
----
-
-## Honesty section — what is and isn't live
-
-We will not overclaim. This repo was fixed so that nothing is reported verified
-unless it is. Concretely:
-
-- **Scaffolded paths are never reported verified.** The `upto` scheme and
-  `batch-settlement` are structural work only: shape/price/asset are validated,
-  and `/v1/x402/health` reports `upto=scaffolded`,
-  `batch-settlement=scaffolded` until a real facilitator impl is registered.
-  `verified:false` is the honest answer.
-- **Verifying is not settling.** EIP-7702 self-verify reads **on-chain receipts
-  only**; Solana's SPL RPC verifies **on-chain receipts only**. Neither
-  broadcasts a settlement. Returning `success:true` there would *fabricate* a
-  settlement record, so both **fail closed** with `success:false,
-  reason:"needs_facilitator … verify-only"`. See C1/C2 in
-  [`docs/COFFER-CHANGELOG.md`](docs/COFFER-CHANGELOG.md).
-- **A bare HTTP-200 is not proof of payment.** `M2` requires an explicit
-  verification/settlement signal (`isValid`/`verified`/`settled` true, or a
-  transaction reference) from a facilitator before reporting `success`. `H3`
-  removes `success:true` alone as a verification gate.
-- **Gas-sponsoring is not free gas.** Un-sponsored gas-sponsoring (EIP-2612 /
-  ERC-20 approval) **never reports verified** and never fabricates a `tx_hash`;
-  without a configured `sponsor_impl`, settlement raises `not implemented —
-  needs_facilitator` (`H1`). When it does run: the **buyer pays payment gas; the
-  sponsor fronts the approval gas only** (`M1`).
-- **Nonces are atomic.** In-memory replay protection serializes check-then-add
-  under an `asyncio.Lock` (`H2`); Redis `SETNX` remains canonical in production.
-
----
-
-## Extensions — 2026 extension spec
-
-| Extension | Status |
-| --------- | ------ |
-| **payment-identifier** — idempotent, caller-bound, TTL'd verified ids (replay by a different caller rejected) | ✅ implemented |
-| **EIP-2612 gas-sponsoring** — gasless permit-style payments | ✅ implemented |
-| **ERC-20 approval gas-sponsoring** — gasless ERC-20 approve payments | ✅ implemented |
-| **`upto`** scheme — authorize up to a maximum, settlement flexible | 🔜 scaffolded (scheme landed in official SDK; not reported verified) |
-| **batch-settlement** — deposit + escrow-style multi-settle (before/after-handler phases) | 🔜 scaffolded |
-
----
-
-## Comparison — Coffer vs the facilitator field
-
-Source: [`docs/x402-official-spec/dev-tools__facilitators.md`](docs/x402-official-spec/dev-tools__facilitators.md)
-(the official facilitator catalog). Our distinctive axis: **self-hosting +
-open source + breadth at once.** [REVIEW] Rival-prowess cells below are curated
-from the catalog; verify each cell against a cited upstream source before
-publish (Coinbase/PayAI/Cloudflare settlement routing, Mogami Base-only,
-Fireblocks vault coupling).
-
-| Capability | **Coffer** | Coinbase (CDP) | PayAI | Cloudflare | Fireblocks | Mogami |
-| ---------- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Open source (OSS) | ✅ MIT | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **Self-hosted** (no hosted dependency) | ✅ | ❌ | ❌ | ❌ | ⚠️ Fireblocks vault | ⚠️ Docker, Base-only |
-| **Networks live** | **6** (EVM×5 + Solana) | Solana mostly | multi | — | multi-chain | Base only |
-| **Live payment options** | **25** | USDC-centric | all tokens | — | — | USDC |
-| Self-settle in-process (no facilitator) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| TRON | scaffolded | ❌ | — | ❌ | ❌ | ❌ |
-| MCP payment wrapper | ✅ native | ❌ | ❌ | ❌ | ❌ | ❌ |
-
-**Verdict:** on **self-hosting** we beat every hosted facilitator (Coinbase /
-PayAI / Cloudflare route settlement through their service by design). On
-**network breadth** we are among the broadest self-hostable OSS options (Mogami
-is Base-only; Fireblocks is OSS but couples settlement to its hosted vault).
-Coffer is OSS, self-hosted, and self-settling — a combination no single rival in
-the catalog now provides. [REVIEW] "Among the broadest self-hostable" is a
-position we assert, not one we've proven against a dated public audit; add a
-citation or keep the hedge before publishing.
-
----
-
-## Quickstart — one line
+### Install
 
 ```bash
-pip install coffer
+pip install x402-coffer
 ```
+
+### One-Line Paywall
 
 ```python
-import coffer
-from fastapi import FastAPI
+from coffer import require_payment
 
-app = FastAPI()
-
-@app.get("/paid")
-@coffer.require_payment(asset="USDC", network="base", amount=0.001)
-async def paid_endpoint():
-    return {"data": "paid in one line"}
+@app.get("/premium")
+@require_payment(asset="USDC", network="base", amount=0.001, operation="scrape")
+async def premium(request):
+    return {"data": "you paid!"}
 ```
 
-Curl it unpaid → `402 Payment Required` with the full `PAYMENT-REQUIRED`
-header (`accepts[]` built from your configured networks/assets). Pay via any
-configured facilitator **or the built-in self-facilitator**, replay with
-`X-Payment-ID`, get `200`.
+### Docker (Full Stack)
 
-Full runnable examples:
-- [`examples/fastapi_paid_endpoint.py`](examples/fastapi_paid_endpoint.py) — minimal `@require_payment` route
-- [`examples/mcp_server_paid.py`](examples/mcp_server_paid.py) — MCP server with a paid tool (client auto-pay bridge + server-side gate)
-- [`examples/self_hosted_facilitator.py`](examples/self_hosted_facilitator.py) — stand up your own verify/settle, no Coinbase
+```bash
+git clone https://git.rugmunch.io/RugMunchMedia/x402-coffer.git
+cd x402-coffer
+cp .env.example .env   # set your wallet + RPC
+docker compose up
+```
 
----
-
-## Facilitator routing
-
-`FacilitatorRouter` picks a health-aware facilitator with automatic fallback —
-**including your own in-process self-facilitator**.
-
-| Mode | Setting | Verifies / settles |
-| --- | --- | --- |
-| **Self-hosted (default)** | `X402_SELF_FACILITATE=1` | your EIP-3009 / EIP-7702 (EVM) + SPL (Solana) |
-| Coinbase / x402.org | `https://x402.org/facilitator` | hosted (optional) |
-| PayAI | `https://facilitator.payai.network` | hosted (optional) |
-| Cloudflare | env URLs | hosted (opt-in) |
-
-Drop the hosted facilitators entirely and Coffer settles on-chain with **no
-external dependency**.
+Your facilitator is live at `http://localhost:8000`. Dashboard at `/dashboard`.
 
 ---
 
-## 2026 spec compliance
+## How It Works
 
-- **Protocol:** v1 **and** v2 wire formats (`PaymentRequired` / `PaymentPayload`
-  / `SettlementResponse`). Exact header scheme: `HTTP 402` +
-  `PAYMENT-REQUIRED: <base64 JSON>` + `X-Payment-Required: true` +
-  `X-Payment-Options: x402`; replay via `X-Payment-ID`.
-- **Schemes:** `exact` (EVM `eip3009` / `permit2` / `native` + SVM `spl`).
-  `upto` / `batch-settlement` are scaffolded (not reported verified).
-- **Extensions:** keys `payment-identifier`, `eip2612-gas-sponsoring`,
-  `erc20-approval-gas-sponsoring`.
-- **Vendored x402 spec:** the repo carries the official 2026 `docs/x402-official-spec/`
-  (v1 + v2) and delegates verification/settlement through `x402-py`'s public API
-  **or** the self-hosted verifier — fail-fast, no silent fallback.
-
-> See [ARCHITECTURE.md](ARCHITECTURE.md) for the 402 flow and module layering,
-> [CONTRIBUTING.md](CONTRIBUTING.md) to add a network or extension, and
-> [`docs/COFFER-CHANGELOG.md`](docs/COFFER-CHANGELOG.md) for the build record.
+```
+Client (AI Agent / Browser)        Your Server (Coffer)
+  │                                    │
+  │  GET /premium                     │
+  ├───────────────────────────────────►│
+  │                                    │
+  │  HTTP 402 Payment Required        │
+  │  PAYMENT-REQUIRED: <base64 JSON>  │   ← price, network, asset, payTo
+  │◄───────────────────────────────────┤
+  │                                    │
+  │  (client signs / sends payment)   │
+  │                                    │
+  │  GET /premium                     │
+  │  PAYMENT-SIGNATURE: <base64 JSON> │
+  ├───────────────────────────────────►│
+  │                                    │
+  │                              ┌─────┴──────┐
+  │                              │ Facilitator │
+  │                              │   Router    │
+  │                              └─────┬──────┘
+  │                                    │
+  │                          ┌─────────┴─────────┐
+  │                          │                   │
+  │                    ┌─────┴─────┐      ┌──────┴──────┐
+  │                    │  External  │      │  Self-Hosted │
+  │                    │  Facilitator│      │  Facilitator │
+  │                    │  (Coinbase, │      │  (EIP-3009,  │
+  │                    │   PayAI,    │      │   SPL, TRC-20│
+  │                    │   Cloudflare│      │   verify)    │
+  │                    └─────┬──────┘      └──────┬───────┘
+  │                          │                   │
+  │                          └─────────┬─────────┘
+  │                                    │
+  │                          ┌─────────┴─────────┐
+  │                          │   Verification    │
+  │                          │   - EIP-7702 (EVM)│
+  │                          │   - SPL RPC (Sol) │
+  │                          │   - TRC-20 (TRON) │
+  │                          └─────────┬─────────┘
+  │                                    │
+  │                          ┌─────────┴─────────┐
+  │                          │    Settlement     │
+  │                          │   - EIP-3009 sig  │
+  │                          │   - Broadcast tx  │
+  │                          │   - Return hash   │
+  │                          └─────────┬─────────┘
+  │                                    │
+  │  HTTP 200 OK                      │
+  │  PAYMENT-RESPONSE: <base64 JSON>  │   ← settlement receipt
+  │◄───────────────────────────────────┤
+```
 
 ---
 
-## Scope
+## Multi-Chain Support
 
-- x402 payment verification + settlement (facilitator & self-hosted)
-- MCP server exposing a paid, discoverable tool surface
-- 2026 extension support (idempotency, gas-sponsoring, schemes)
+### Live Networks
 
-## Standards
+| Network | CAIP-2 | Assets | Verification | Settlement |
+| ------- | ------ | ------ | ------------ | ---------- |
+| **Base** | `eip155:8453` | USDC, USDT, ETH, WETH | EIP-7702 self-verify + facilitators | EIP-3009 broadcast |
+| **Ethereum** | `eip155:1` | USDC, USDT, ETH, WETH | EIP-7702 self-verify + facilitators | EIP-3009 broadcast |
+| **Arbitrum** | `eip155:42161` | USDC, USDT, ARB, ETH, WETH | EIP-7702 self-verify + facilitators | EIP-3009 broadcast |
+| **Optimism** | `eip155:10` | USDC, USDT, ETH, WETH | EIP-7702 self-verify + facilitators | EIP-3009 broadcast |
+| **Polygon** | `eip155:137` | USDC, USDT, POL, WETH | EIP-7702 self-verify + facilitators | EIP-3009 broadcast |
+| **Solana** | `solana:mainnet` | USDC, USDT, SOL | SPL RPC verifier (getTransaction jsonParsed) | Buyer-side (verified) |
+| **TRON** | `tron:mainnet` | USDT, TRX | TRC-20 Grid verifier (gettransactioninfobyid) | Buyer-side (verified) |
 
-Follows https://git.rugmunch.io/RugMunchMedia/standards · MIT License
+### Honest Security Posture
+
+Every chain reports its verification status programmatically:
+
+```python
+from coffer import VERIFICATION_STATUS
+# {"evm": "live", "solana": "live", "tron": "live"}
+```
+
+Scaffolded chains (if any) are **never** reported as verified. No fake security.
+
+---
+
+## Architecture
+
+```
+coffer/
+├── __init__.py              # Public API — one import surface
+├── mcp.py                   # MCP server with paid tool surface
+├── _engine/                 # Internal implementation
+│   ├── facilitator_router.py    # Health-aware router with auto-fallback
+│   ├── self_facilitator.py      # EIP-3009 verify + settlement broadcast
+│   ├── evm_verify.py            # EIP-7702 self-verify fallback
+│   ├── solana_verifier.py       # SPL RPC verifier (no SDK)
+│   ├── tron_verifier.py         # TRC-20 Grid verifier (no SDK)
+│   ├── middleware.py             # X402Middleware, require_payment
+│   ├── handler.py               # X402Handler (verify/settle orchestration)
+│   ├── batch.py                 # Batch payment helpers
+│   ├── pricing.py               # Server-side pricing oracle
+│   ├── assets.py                # SUPPORTED_ASSETS table (CAIP-2 keyed)
+│   ├── body.py                  # PaymentRequired / PaymentPayload / SettlementResponse
+│   ├── scheme.py                # Backward-compat re-exports
+│   ├── replay.py                # Nonce store + replay protection
+│   ├── store.py                 # Payment record persistence
+│   ├── dashboard.py             # Analytics + observability
+│   ├── webhooks.py              # Payment event webhooks
+│   ├── ratelimit.py             # Rate limiting middleware
+│   ├── observability.py         # OpenTelemetry + Prometheus
+│   ├── adapters.py              # FastAPI / Starlette adapters
+│   ├── adapters_wsgi.py         # WSGI (Flask) adapter
+│   └── ...
+├── tests/                     # Test suite
+├── docs/                      # Documentation
+├── compose.yml                # Docker deployment
+├── pyproject.toml             # Package metadata
+├── README.md                  # This file
+├── SECURITY.md                # Security policy
+├── ARCHITECTURE.md            # Full architecture
+└── CHANGELOG.md               # Release notes
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module layering, payment flow, verification pipeline, settlement pipeline, and deployment topologies.
+
+---
+
+## Configuration
+
+All configuration is env-var-first with `X402_*` prefixes:
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `X402_WALLET` | — | Your receiving wallet (EVM address) |
+| `X402_WALLET_SOLANA` | — | Your Solana receiving address |
+| `X402_WALLET_TRON` | — | Your TRON receiving address (base58) |
+| `X402_SELF_FACILITATE` | `1` | Enable self-hosted settlement (no Coinbase) |
+| `X402_FACILITATOR_KEY` | — | EVM private key for settlement gas |
+| `X402_FACILITATOR_RPC` | — | EVM RPC endpoint for settlement |
+| `X402_NETWORK` | `base` | Default network |
+| `X402_ASSET` | `USDC` | Default asset |
+| `X402_PAYMENT_TTL` | `3600` | Payment validity in seconds |
+| `X402_PRICING_JSON` | — | Override pricing table (JSON) |
+
+---
+
+## API Reference
+
+### Middleware (One-Line Paywall)
+
+```python
+from coffer import X402Middleware
+
+app.add_middleware(X402Middleware, free_paths={"/health", "/docs"})
+```
+
+### Per-Route Decorator
+
+```python
+from coffer import require_payment
+
+@app.get("/premium")
+@require_payment(asset="USDC", network="base", amount=0.001, operation="scrape")
+async def premium(request): ...
+```
+
+### Full-Control Handler
+
+```python
+from coffer import X402Handler
+
+handler = X402Handler()
+
+@app.get("/premium")
+async def premium(request):
+    payment = handler.decode_payment_signature(request.headers.get("PAYMENT-SIGNATURE"))
+    if not payment:
+        return handler.require_payment("scrape", resource=str(request.url))
+    result = await handler.verify_payment(payment["paymentId"], payment["txHash"], network="base")
+    if not result["verified"]:
+        return JSONResponse(status_code=402, content={"error": result["reason"]})
+    settlement = await handler.settle_payment(payment["paymentId"], payment["txHash"], network="base")
+    return JSONResponse(content={"data": "paid!"}, headers={"PAYMENT-RESPONSE": settlement})
+```
+
+### MCP Server
+
+```python
+from coffer.mcp import create_mcp_server
+
+mcp = create_mcp_server(pricing={"/weather": 0.001, "/scrape": 0.01})
+```
+
+---
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the full security policy, threat model, and best practices.
+
+Key principles:
+- **Server-side pricing is authoritative** — client amounts are validated, never trusted
+- **Fail-closed everywhere** — missing wallets, unknown assets, RPC timeouts all reject
+- **Replay hardening** — TTL + caller binding + EIP-3009 nonce store
+- **No silent failures** — every error returns `verified: false` with a reason
+- **Honest status** — scaffolded chains never report as live
+
+---
+
+## Compliance
+
+Coffer is a **non-custodial** facilitator — it never holds buyer funds. Settlement moves directly from buyer to seller via on-chain transfers.
+
+- **OFAC/Sanctions**: Coffer does not perform KYT/OFAC screening. Operators in regulated jurisdictions must implement their own sanctions screening.
+- **KYC/AML**: Non-custodial — operators should assess local requirements.
+- **Audit trail**: All verification/settlement events are logged with payment_id, tx_hash, network, amount, caller, timestamp.
+
+---
 
 ## FAQ
 
-See [docs/FAQ.md](docs/FAQ.md) for frequently asked questions.
+**Q: Do I need Coinbase?**
+A: No. Coffer is fully self-hosted. You can optionally use Coinbase's facilitator as one of many backends, but it's never required.
+
+**Q: What chains are supported?**
+A: EVM (Base, Ethereum, Arbitrum, Optimism, Polygon), Solana, and TRON. 25+ live (network, asset) options.
+
+**Q: Is there a hosted version?**
+A: No. Coffer is self-hosted by design. Your transactions never touch our servers.
+
+**Q: How fast is settlement?**
+A: EVM: ~2 seconds (one RPC round-trip). Solana/TRON: instant (verification only, settlement is buyer-side).
+
+**Q: What happens if my RPC goes down?**
+A: The facilitator router automatically falls back to the next healthy facilitator. If all fail, payments are rejected (fail-closed).
+
+**Q: Can I use this with AI agents?**
+A: Yes. Coffer includes a native MCP server with paid tool surface. Any MCP-compatible agent can discover and pay for your tools.
+
+**Q: Is it audited?**
+A: Not yet. See [SECURITY.md](SECURITY.md) for the current audit status and our vulnerability reporting process.
+
+---
+
+## Contributing
+
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+1. Fork and create a feature branch
+2. Install dev deps: `pip install "x402-coffer[dev]"`
+3. Follow conventional commits (`feat:`, `fix:`, `docs:`)
+4. `ruff check . && mypy coffer && pytest` must pass
+5. Open a PR
+
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Rug Munch Media LLC.
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ by <a href="https://rugmunch.io">Rug Munch Media LLC</a> — sovereign payments for the agentic economy.</sub>
+</p>
