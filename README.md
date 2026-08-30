@@ -210,9 +210,28 @@ All configuration is env-var-first with `X402_*` prefixes:
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `X402_WALLET` | — | Your receiving wallet (EVM address) |
-| `X402_WALLET_SOLANA` | — | Your Solana receiving address |
-| `X402_WALLET_TRON` | — | Your TRON receiving address (base58) |
+| `X402_WALLET` | — | Your receiving wallet (EVM address; default payee for all `eip155:*`) |
+| `X402_WALLET_SOLANA` | — | Your Solana receiving address (base58) |
+| `X402_WALLET_TRON` | — | Your TRON receiving address (base58check, `T`-prefixed) |
+| `X402_WALLET_BASE` / `_ETH` / `_ARBITRUM` / `_OPTIMISM` / `_POLYGON` | falls back to `X402_WALLET` | Per-network EVM overrides |
+
+Legacy alias names are honored as read-time fallbacks (canonical wins, first
+non-empty value wins): `X402_PAY_TO` / `X402_EVM_PAY_TO` / `X402_BASE_WALLET`
+→ `X402_WALLET`; `X402_SOL_PAY_TO` / `X402_SOLANA_WALLET` →
+`X402_WALLET_SOLANA`; `X402_TRON_PAY_TO` → `X402_WALLET_TRON`.
+
+**Fail-closed:** there is no hardcoded wallet default. If no real receiving
+wallet resolves, `load_settings()` raises at boot and the service refuses to
+start — it never silently serves a placeholder `payTo`. The only unconfigured
+sentinels are `""` and `coffer-unconfigured-wallet`.
+
+> **Gotcha:** the Rug Munch Media operator EVM treasury
+> `0x1E3AC01d0fdb976179790BDD02823196A92705C9` (with Solana
+> `G1uZFfsdxK2PuH2Em5LhRkEcptxHWe4vy5BZak67QyKv` and TRON
+> `TYSWXWr24QTe3c99V9dtzhe1aZTneE261p` — the same payees as Pry and
+> cloud-hosting signups) is a REAL payee address, never an unconfigured
+> sentinel. It was historically coffer's `CONFIGURED_WALLET` placeholder;
+> treating it as one made correctly configured deployments fail closed.
 | `X402_SELF_FACILITATE` | `1` | Enable self-hosted settlement (no Coinbase) |
 | `X402_FACILITATOR_KEY` | — | EVM private key for settlement gas |
 | `X402_FACILITATOR_RPC` | — | EVM RPC endpoint for settlement |

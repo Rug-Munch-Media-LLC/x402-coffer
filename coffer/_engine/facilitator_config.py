@@ -6,10 +6,20 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-# Production MUST set X402_PAY_TO / X402_WALLET. The default below is a
-# legacy placeholder kept for backward-compat with existing tests; create_app()
-# fails closed if the wallet is still this sentinel.
-PAY_TO = os.getenv("X402_PAY_TO", "0x1E3AC01d0fdb976179790BDD02823196A92705C9").lower()
+# Production MUST set X402_WALLET (canonical EVM payee). Legacy names
+# X402_PAY_TO / X402_EVM_PAY_TO are honored as read-time aliases. There is NO
+# hardcoded wallet default: unset resolves to "" and create_app()/config.py
+# fails closed on an unconfigured wallet.
+def _env_first(*names: str) -> str:
+    """Canonical-first env alias resolution (first non-empty value wins)."""
+    for name in names:
+        val = os.getenv(name, "")
+        if val:
+            return val
+    return ""
+
+
+PAY_TO = _env_first("X402_WALLET", "X402_PAY_TO", "X402_EVM_PAY_TO").lower()
 X402_TIMEOUT_SECONDS = float(os.getenv("X402_TIMEOUT_SECONDS", "15"))
 X402_WALLET = os.getenv("X402_WALLET", PAY_TO)
 X402_NETWORK_WALLETS = {
@@ -20,8 +30,10 @@ X402_NETWORK_WALLETS = {
     "eip155:137": os.getenv("X402_WALLET_POLYGON", X402_WALLET),
     "eip155:84532": os.getenv("X402_WALLET_BASE_SEPOLIA", X402_WALLET),
     "eip155:11155111": os.getenv("X402_WALLET_ETH_SEPOLIA", X402_WALLET),
-    "solana:mainnet": os.getenv("X402_WALLET_SOLANA", ""),
-    "tron:mainnet": os.getenv("X402_WALLET_TRON", ""),
+    "solana:mainnet": _env_first(
+        "X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET"
+    ),
+    "tron:mainnet": _env_first("X402_WALLET_TRON", "X402_TRON_PAY_TO"),
 }
 X402_SELF_FACILITATE = os.getenv("X402_SELF_FACILITATE", "1").lower() in ("1", "true")
 X402_SELF_FACILITATOR_KEY = os.getenv("X402_SELF_FACILITATOR_KEY", "")

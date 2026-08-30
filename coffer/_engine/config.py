@@ -31,11 +31,11 @@ __version__ = "5.0.0"
 #: back to conservative defaults — an unset wallet is the one fatal misconfig.
 REQUIRED: tuple[str, ...] = ("X402_WALLET",)
 
-#: Legacy placeholder default the domain layer may fall back to internally
-#: (service.py PAY_TO). config.py treats it as UNCONFIGURED so we never ship
-#: payments to a hardcoded address silently.
-CONFIGURED_WALLET = "0x1E3AC01d0fdb976179790BDD02823196A92705C9"
-_UNCONFIGURED_MARKERS = {"", "coffer-unconfigured-wallet", CONFIGURED_WALLET.lower()}
+#: Unconfigured-wallet sentinels. NOTE: the operator EVM treasury is a REAL
+#: payee address and must NEVER be listed here — doing so made
+#: ``wallet_configured()`` return False when X402_WALLET was set to the
+#: treasury, refusing to boot a correctly configured deployment.
+_UNCONFIGURED_MARKERS = {"", "coffer-unconfigured-wallet"}
 
 
 def _env(name: str, default: str = "") -> str:
@@ -124,20 +124,34 @@ class X402Settings(BaseModel):
         def g(name: str, default: str = "") -> str:
             return e.get(name, default)
 
+        def first(*names: str) -> str:
+            """Canonical-first env alias resolution (first non-empty wins)."""
+            for name in names:
+                val = e.get(name, "")
+                if val:
+                    return val
+            return ""
+
         return cls(
             pay_to=g("X402_PAY_TO", "").lower(),
-            wallet=g("X402_WALLET", g("X402_PAY_TO", "")).lower(),
+            # Canonical env schema: X402_WALLET (EVM), X402_WALLET_SOLANA,
+            # X402_WALLET_TRON. Old names are read-time aliases only.
+            wallet=first(
+                "X402_WALLET", "X402_PAY_TO", "X402_EVM_PAY_TO", "X402_BASE_WALLET"
+            ).lower(),
             wallet_base=g("X402_WALLET_BASE", "").lower(),
             wallet_eth=g("X402_WALLET_ETH", "").lower(),
             wallet_arbitrum=g("X402_WALLET_ARBITRUM", "").lower(),
             wallet_optimism=g("X402_WALLET_OPTIMISM", "").lower(),
             wallet_polygon=g("X402_WALLET_POLYGON", "").lower(),
-            wallet_tron=g("X402_WALLET_TRON", "").lower(),
-            wallet_solana=g("X402_WALLET_SOLANA", "").strip(),
-            evm_pay_to=g("X402_EVM_PAY_TO", "").lower(),
-            sol_pay_to=g("X402_SOL_PAY_TO", "").strip(),
+            wallet_tron=first("X402_WALLET_TRON", "X402_TRON_PAY_TO").lower(),
+            wallet_solana=first(
+                "X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET"
+            ).strip(),
+            evm_pay_to=first("X402_EVM_PAY_TO", "X402_WALLET").lower(),
+            sol_pay_to=first("X402_SOL_PAY_TO", "X402_WALLET_SOLANA").strip(),
             btc_pay_to=g("X402_BTC_PAY_TO", "").strip(),
-            tron_pay_to=g("X402_TRON_PAY_TO", "").strip(),
+            tron_pay_to=first("X402_TRON_PAY_TO", "X402_WALLET_TRON").strip(),
             asterpay_sepa_iban=g("ASTERPAY_SEPA_IBAN", "").strip(),
             self_facilitate=_env_bool("X402_SELF_FACILITATE", True),
             self_facilitator_key=g("X402_SELF_FACILITATOR_KEY", ""),
@@ -305,7 +319,6 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
 
 __all__ = [
-    "CONFIGURED_WALLET",
     "REQUIRED",
     "X402Settings",
     "create_app",
