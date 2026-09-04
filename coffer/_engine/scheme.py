@@ -92,6 +92,23 @@ def negotiate_scheme(client_schemes: list[str] = None, network: str = "", asset:
     return client_schemes[0] if client_schemes else "exact"
 
 
+_IMMUTABLE_FIELDS = {"scheme", "network", "asset", "max_timeout_seconds"}
+_RESERVED_EXTRA_KEYS = {"paymentFlow", "assetTransferMethod"}
+
+
+def validate_scheme_extension(baseline: dict, enriched: dict, extension_key: str = "") -> str | None:
+    """Validate that a scheme extension only enriches, never weakens. Returns None if OK, error string if violated."""
+    if len(baseline.get("accepts", [])) != len(enriched.get("accepts", [])):
+        return f"extension {extension_key} changed accepts length"
+    for field in _IMMUTABLE_FIELDS:
+        if baseline.get(field) != enriched.get(field):
+            return f"extension {extension_key} modified immutable field: {field}"
+    for key in _RESERVED_EXTRA_KEYS:
+        if key in baseline.get("extra", {}) and key not in enriched.get("extra", {}):
+            return f"extension {extension_key} removed reserved key: {key}"
+    return None
+
+
 __all__ = [
     "CAIP2_NETWORK_IDS",
     "SCAFFOLDED_NETWORKS",
@@ -117,4 +134,5 @@ __all__ = [
     "resolve_asset_entry",
     "resolve_price_usd",
     "validate_client_amount",
+    "validate_scheme_extension",
 ]
