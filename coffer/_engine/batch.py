@@ -13,8 +13,11 @@ modules.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import os
 import threading
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -27,6 +30,28 @@ from .scheme import asset_to_atomic, build_payment_required
 # Active batch payment requests: batch_id -> {operations, total_usd, paid, tx_hash}
 _batch_payments: dict[str, dict[str, Any]] = {}
 _batch_lock = threading.Lock()
+
+
+@dataclasses.dataclass
+class BatchChannel:
+    """On-chain batch settlement channel with voucher/claim/refund model.
+
+    A channel is opened by a depositor on a given chain and funds a set of
+    claims. Claims increment ``cumulative_claimed`` up to
+    ``max_claims_per_batch``; a channel can be refunded to return the
+    remaining balance.
+    """
+
+    channel_id: str
+    chain_id: str
+    depositor: str
+    cumulative_claimed: int = 0
+    max_claims_per_batch: int = 100
+    status: str = "open"  # open / claimed / refunded
+
+
+# Active batch settlement channels: channel_id -> BatchChannel
+_channels: dict[str, BatchChannel] = {}
 
 
 async def create_batch_payment(operations: list[str]) -> dict[str, Any]:
@@ -135,3 +160,74 @@ def is_batch_paid(batch_id: str, caller_key: str = "") -> bool:
             return False
     stored_caller = batch.get("caller_key", "")
     return not (stored_caller and stored_caller != caller_key)
+
+
+def create_channel(chain_id: str, depositor: str) -> BatchChannel:
+    """Open a new on-chain batch settlement channel for a depositor.
+
+    Generates a deterministic-ish channel id from chain, depositor, and the
+    current time, then stores the channel in the in-memory registry.
+    """
+    channel_id = hashlib.sha256(f"{chain_id}:{depositor}:{time.time()}".encode()).hexdigest()[:16]
+    channel = BatchChannel(
+        channel_id=channel_id,
+        chain_id=chain_id,
+        depositor=depositor,
+    )
+    with _batch_lock:
+        _channels[channel_id] = channel
+    return channel
+
+
+def claim_channel(channel_id: str, amount: int) -> dict:
+    """Claim ``amount`` from an open channel.
+
+    Fails if the channel does not exist, is not open, or the claim would
+    exceed ``max_claims_per_batch``. On success increments
+    ``cumulative_claimed`` and returns the remaining balance.
+    """
+    with _batch_lock:
+        channel = _channels.get(channel_id)
+        if not channel:
+            return {"success": False, "reason": "Channel not found"}
+        if channel.status != "open":
+            return {"success": False, "reason": f"Channel is {channel.status}"}
+        if channel.cumulative_claimed + amount > channel.max_claims_per_batch:
+            return {
+                "success": False,
+                "reason": "Exceeds max_claims_per_batch",
+                "max_claims_per_batch": channel.max_claims_per_batch,
+            }
+        channel.cumulative_claimed += amount
+        remaining = channel.max_claims_per_batch - channel.cumulative_claimed
+    return {
+        "success": True,
+        "claimed": amount,
+        "remaining": remaining,
+    }
+
+
+def refund_channel(channel_id: str) -> dict:
+    """Refund a channel, marking it as refunded and returning the balance.
+
+    The remaining balance is the unclaimed portion of ``max_claims_per_batch``.
+    """
+    with _batch_lock:
+        channel = _channels.get(channel_id)
+        if not channel:
+            return {"success": False, "reason": "Channel not found"}
+        if channel.status == "refunded":
+            return {"success": False, "reason": "Channel already refunded"}
+        channel.status = "refunded"
+        remaining = channel.max_claims_per_batch - channel.cumulative_claimed
+    return {
+        "success": True,
+        "channel_id": channel_id,
+        "refunded": remaining,
+    }
+
+
+def get_channel(channel_id: str) -> BatchChannel | None:
+    """Return the channel for ``channel_id``, or None if it does not exist."""
+    with _batch_lock:
+        return _channels.get(channel_id)
