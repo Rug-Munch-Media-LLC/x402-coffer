@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import math
+import random
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -460,11 +461,21 @@ class FacilitatorRouter:
         }
         last_error = "No facilitators available"
         async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
-            for config in sorted(
-                (f for f in self.facilitators if self._is_healthy(f) and f.settle_url),
-                key=self._health_score,
-                reverse=True,
-            ):
+            healthy = [f for f in self.facilitators if self._is_healthy(f) and f.settle_url]
+            if not healthy:
+                return {
+                    "success": False,
+                    "payment_id": payment_id,
+                    "reason": last_error,
+                }
+            # Weighted random: higher health score = higher selection probability
+            scores = [max(1, self._health_score(f)) for f in healthy]
+            total = sum(scores)
+            weights = [s / total for s in scores]
+            selected = random.choices(healthy, weights=weights, k=1)[0]
+            # Try the weighted-random pick first, then fall through to the rest.
+            ordered = [selected] + [f for f in healthy if f is not selected]
+            for config in ordered:
                 try:
                     start_time = time.time()
                     response = await client.post(config.settle_url, json=payload)

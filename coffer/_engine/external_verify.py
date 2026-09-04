@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from datetime import UTC, datetime
 from typing import Any
 
@@ -45,11 +46,22 @@ async def verify_external(
     }
     last_error = "No facilitators available"
     async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
-        for config in sorted(
-            (f for f in self.facilitators if self._is_healthy(f)),
-            key=self._health_score,
-            reverse=True,
-        ):
+        healthy = [f for f in self.facilitators if self._is_healthy(f)]
+        if not healthy:
+            return {
+                "verified": False,
+                "reason": last_error,
+                "settlement": None,
+                "network": network_id,
+            }
+        # Weighted random: higher health score = higher selection probability
+        scores = [max(1, self._health_score(f)) for f in healthy]
+        total = sum(scores)
+        weights = [s / total for s in scores]
+        selected = random.choices(healthy, weights=weights, k=1)[0]
+        # Try the weighted-random pick first, then fall through to the rest.
+        ordered = [selected] + [f for f in healthy if f is not selected]
+        for config in ordered:
             try:
                 response = await client.post(config.verify_url, json=payload)
                 response.raise_for_status()
