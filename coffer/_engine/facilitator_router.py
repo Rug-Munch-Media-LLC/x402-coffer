@@ -3,6 +3,7 @@
 # --- facilitator_router.py: smart facilitator orchestration + global accessors ---
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -62,6 +63,7 @@ class FacilitatorRouter:
         )
         self._failures: dict[str, tuple[int, float]] = {}
         self._successes: dict[str, int] = {}
+        self._latencies: dict[str, list[float]] = {}
         self.self_hosted = X402_SELF_FACILITATE if self_hosted is None else bool(self_hosted)
         self._self_facilitator: SelfFacilitator | None = None
         self._network_facilitators: dict[str, Any] = {}
@@ -79,18 +81,25 @@ class FacilitatorRouter:
             return True  # half-open: allow a probe after the cooldown window
         return count < 3
 
-    def _health_score(self, config: FacilitatorConfig) -> int:
+    def _health_score(self, config: FacilitatorConfig) -> float:
         successes = self._successes.get(config.name, 0)
         failures = self._failures.get(config.name, (0, 0))[0]
-        return successes - failures * 2
+        latencies = self._latencies.get(config.name, [])
+        avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+        return successes - failures * 2 - avg_latency
 
     def _mark_failure(self, config: FacilitatorConfig) -> None:
         count, _ = self._failures.get(config.name, (0, 0.0))
         self._failures[config.name] = (count + 1, time.time())
         log.warning("x402_facilitator_failure", extra={"facilitator": config.name})
 
-    def _mark_success(self, config: FacilitatorConfig) -> None:
+    def _mark_success(self, config: FacilitatorConfig, start_time: float | None = None) -> None:
         self._successes[config.name] = self._successes.get(config.name, 0) + 1
+        if start_time is not None:
+            latencies = self._latencies.setdefault(config.name, [])
+            latencies.append(time.time() - start_time)
+            if len(latencies) > 100:
+                del latencies[: len(latencies) - 100]
         entry = self._failures.get(config.name)
         if entry is None:
             return
@@ -241,7 +250,17 @@ class FacilitatorRouter:
             return result
 
         # External facilitator path.
-        verified_result = await verify_external(self, payment_id, tx_hash, network_id, asset, amount_usd)
+        for attempt in range(3):
+            try:
+                verified_result = await verify_external(
+                    self, payment_id, tx_hash, network_id, asset, amount_usd
+                )
+                break
+            except (httpx.HTTPError, asyncio.TimeoutError):  # noqa: UP041 — explicit per spec
+                if attempt == 2:
+                    raise
+                delay = 0.5 * (2**attempt)
+                await asyncio.sleep(delay)
         from coffer._engine.observability import observe_verify
         from coffer._engine.webhooks import emit_payment_event
 
@@ -447,10 +466,11 @@ class FacilitatorRouter:
                 reverse=True,
             ):
                 try:
+                    start_time = time.time()
                     response = await client.post(config.settle_url, json=payload)
                     response.raise_for_status()
                     data = response.json()
-                    self._mark_success(config)
+                    self._mark_success(config, start_time)
                     settled = normalize_settlement(data, payment_id, tx_hash, network_id, config.name)
                     from coffer._engine.observability import observe_settle
 
