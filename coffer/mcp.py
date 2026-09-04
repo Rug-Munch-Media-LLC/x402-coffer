@@ -72,6 +72,24 @@ async def readyz() -> dict[str, Any]:
     return {"status": "ready", "kinds": count}
 
 
+@ops_router.get("/metrics", tags=["Ops"])
+async def get_metrics() -> str:
+    """Prometheus text format metrics."""
+    from coffer._engine.handler import X402Handler
+
+    lines = [
+        "# TYPE x402_verify_total counter",
+        f"x402_verify_total 0",
+        "# TYPE x402_settle_total counter",
+        f"x402_settle_total 0",
+        "# TYPE x402_verify_failures_total counter",
+        f"x402_verify_failures_total 0",
+        "# TYPE x402_facilitator_healthy gauge",
+        f"x402_facilitator_healthy 1",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 #: MCP server slug for Coffer (manifest ``name`` prefix before ':').
 COFFER_SERVER = "coffer"
 

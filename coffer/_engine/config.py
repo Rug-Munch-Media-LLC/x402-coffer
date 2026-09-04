@@ -123,6 +123,7 @@ class X402Settings(BaseModel):
             "/supported",
             "/healthz",
             "/readyz",
+            "/metrics",
         }
     )
 
