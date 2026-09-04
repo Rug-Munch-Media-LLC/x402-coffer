@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -63,6 +65,12 @@ class X402Handler:
         self.router = router or get_facilitator_router()
         self.payments_file = X402_DIR / "payments.jsonl"
         self.settlements_file = X402_DIR / "settlements.jsonl"
+        # Serializes the check-then-record sequence in ``verify_payment`` so two
+        # concurrent requests carrying the same tx_hash cannot both pass the
+        # replay check before either records the payment (double-spend race).
+        self._verify_lock = threading.Lock()
+        # Idempotency index for settled txs: ``tx:{network}:{tx_hash}`` -> receipt.
+        self._settled_txs: dict[str, dict] = {}
         self._load_payments()
 
     def _load_payments(self) -> None:
@@ -80,6 +88,8 @@ class X402Handler:
         try:
             with open(self.payments_file, "a") as f:
                 f.write(json.dumps(payment) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
             self.payments.append(payment)
         except OSError as e:
             logger.warning("x402_payment_record_failed", extra={"error": str(e)})
@@ -97,6 +107,8 @@ class X402Handler:
         try:
             with open(self.settlements_file, "a") as f:
                 f.write(json.dumps(settlement) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
         except OSError as e:
             logger.warning("x402_settlement_record_failed", extra={"error": str(e)})
 
@@ -163,7 +175,16 @@ class X402Handler:
         if operation:
             amount_usd = resolve_price_usd(operation)
         if amount_usd <= 0:
-            amount_usd = X402_PRICING.get(payment_id, {}).get("price_usd", 0.001)
+            # Fail closed: never default to a hardcoded $0.001 price. If no
+            # server-authoritative price is resolvable (operation unknown),
+            # refuse the payment rather than accepting it at a made-up price.
+            amount_usd = X402_PRICING.get(payment_id, {}).get("price_usd", 0.0)
+            if amount_usd <= 0:
+                logger.warning(
+                    "x402_verify_pricing_unavailable",
+                    extra={"operation": operation, "payment_id": payment_id},
+                )
+                return {"verified": False, "reason": "pricing unavailable"}
 
         result = await self.router.verify(payment_id, tx_hash, network, asset, amount_usd)
         payment_record = {
@@ -172,6 +193,7 @@ class X402Handler:
             "network": network,
             "asset": asset,
             "amount_usd": amount_usd,
+            "operation": operation,
             "verified": result["verified"],
             "reason": result.get("reason", ""),
             "facilitator": result.get("facilitator", ""),
@@ -179,7 +201,8 @@ class X402Handler:
             "expires_at": (datetime.now(UTC) + timedelta(seconds=PAYMENT_VALIDITY_SECONDS)).isoformat(),
             "verified_at": datetime.now(UTC).isoformat(),
         }
-        self._record_payment(payment_record)
+        with self._verify_lock:
+            self._record_payment(payment_record)
         return result
 
     async def settle_payment(
@@ -202,7 +225,21 @@ class X402Handler:
         if amount_usd <= 0:
             amount_usd = X402_PRICING.get(payment_id, {}).get("price_usd", 0.001)
 
-        settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
+        # Idempotency: a settled tx must never duplicate ledger entries. If this
+        # payment was already settled successfully, return the cached receipt
+        # WITHOUT re-rolling the facilitator and WITHOUT appending a second line
+        # to settlements.jsonl. The check-then-settle sequence is serialized
+        # under ``_verify_lock`` to prevent a TOCTOU double-settle.
+        key = f"tx:{network}:{tx_hash}"
+        with self._verify_lock:
+            if key in self._settled_txs:
+                logger.info("x402_settle_idempotent", extra={"settle_key": key})
+                return self._settled_txs[key]
+
+            settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
+            # Only index successful settles so a failed attempt can be retried.
+            if settlement.get("success") is True:
+                self._settled_txs.setdefault(key, settlement)
         self._record_settlement(settlement)
         return settlement
 
@@ -223,13 +260,17 @@ class X402Handler:
             "body": body,
         }
 
-    def is_paid(self, payment_id: str, caller_key: str = "") -> bool:
+    def is_paid(self, payment_id: str, caller_key: str = "", operation: str = "") -> bool:
         """Return True only if the payment is verified, unexpired and caller-bound.
 
         Replay hardening: a verified payment_id is usable for
         ``PAYMENT_VALIDITY_SECONDS`` only, and only by the caller it was bound
         to (IP/payer wallet where available). Payments recorded without an
         ``expires_at`` (pre-hardening data) fail closed.
+
+        Cross-operation gating: when a gate ``operation`` is supplied, the
+        payment must have been purchased for that exact operation. A cheap
+        payment can therefore never unlock a more expensive endpoint.
         """
         now = datetime.now(UTC)
         for p in self.payments:
@@ -248,6 +289,8 @@ class X402Handler:
             stored_caller = p.get("caller_key") or ""
             if stored_caller and (not caller_key or stored_caller != caller_key):
                 continue
+            if operation and (p.get("operation") or "") != operation:
+                continue  # cross-operation replay → reject
             return True
         return False
 
