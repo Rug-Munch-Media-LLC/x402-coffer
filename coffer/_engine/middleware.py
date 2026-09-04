@@ -45,29 +45,29 @@ service can never drift apart.
 from __future__ import annotations
 
 from .adapters import (
-    HEADER_X_PAYMENT_ID,  # noqa: F401  (re-export)
-    ASGIApp,  # noqa: F401  (re-export)
-    X402Middleware,  # noqa: F401  (re-export)
-    caller_key_from_request,  # noqa: F401  (re-export)
-    is_free_path,  # noqa: F401  (re-export)
-    require_payment,  # noqa: F401  (re-export)
+    HEADER_X_PAYMENT_ID,
+    ASGIApp,
+    X402Middleware,
+    caller_key_from_request,
+    is_free_path,
+    require_payment,
 )
 from .body import (
-    HEADER_PAYMENT_REQUIRED,  # noqa: F401  (re-export)
-    HEADER_X_PAYMENT_OPTIONS,  # noqa: F401  (re-export)
-    HEADER_X_PAYMENT_REQUIRED,  # noqa: F401  (re-export)
-    LEGACY_TO_CAIP2,  # noqa: F401  (re-export)
-    NETWORK_ASSETS,  # noqa: F401  (re-export)
-    X402_VERSION,  # noqa: F401  (re-export)
-    asset_to_atomic,  # noqa: F401  (re-export)
-    build_multi_asset_accepts,  # noqa: F401  (re-export)
-    build_payment_required,  # noqa: F401  (re-export)
-    normalize_network_id,  # noqa: F401  (re-export)
-    payment_required_body,  # noqa: F401  (re-export)
-    payment_required_headers,  # noqa: F401  (re-export)
-    resolve_price_usd,  # noqa: F401  (re-export)
+    HEADER_PAYMENT_REQUIRED,
+    HEADER_X_PAYMENT_OPTIONS,
+    HEADER_X_PAYMENT_REQUIRED,
+    LEGACY_TO_CAIP2,
+    NETWORK_ASSETS,
+    X402_VERSION,
+    asset_to_atomic,
+    build_multi_asset_accepts,
+    build_payment_required,
+    normalize_network_id,
+    payment_required_body,
+    payment_required_headers,
+    resolve_price_usd,
 )
-from .store import (  # noqa: F401  (re-export)
+from .store import (
     PAYMENT_VALIDITY_SECONDS,
     PaymentStore,
     get_default_store,
@@ -75,7 +75,6 @@ from .store import (  # noqa: F401  (re-export)
 )
 
 __all__ = [
-    "ASGIApp",
     "HEADER_PAYMENT_REQUIRED",
     "HEADER_X_PAYMENT_ID",
     "HEADER_X_PAYMENT_OPTIONS",
@@ -83,9 +82,10 @@ __all__ = [
     "LEGACY_TO_CAIP2",
     "NETWORK_ASSETS",
     "PAYMENT_VALIDITY_SECONDS",
+    "X402_VERSION",
+    "ASGIApp",
     "PaymentStore",
     "X402Middleware",
-    "X402_VERSION",
     "asset_to_atomic",
     "build_multi_asset_accepts",
     "build_payment_required",

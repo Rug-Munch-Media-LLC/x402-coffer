@@ -17,14 +17,14 @@ convention everywhere (see ``docs/X402-SPEC-CONTRACT.md`` §2/§5):
 from __future__ import annotations
 
 # 402 offer builder + middleware (imports the service pricing/wallet tables).
-from .middleware import (  # noqa: F401  (re-export)
+from .middleware import (
     build_multi_asset_accepts,
     build_payment_required,
 )
 
 # Spec wire models (PaymentRequired / accepts[] / settlement receipt /
 # verification result) + the canonical network & asset tables.
-from .models import (  # noqa: F401  (re-export)
+from .models import (
     SUPPORTED_ASSETS,
     SUPPORTED_NETWORKS,
     X402_VERSION,
@@ -42,10 +42,10 @@ from .models import (  # noqa: F401  (re-export)
 )
 
 # The /v1/x402 HTTP surface (payment challenge, verify, settle, health).
-from .router import router  # noqa: F401  (re-export)
+from .router import router
 
 # Spec-conformant facilitator surface + pricing + honest verification status.
-from .service import (  # noqa: F401  (re-export)
+from .service import (
     VERIFICATION_STATUS,
     X402_PRICING,
     FacilitatorRouter,
@@ -78,7 +78,7 @@ try:
                     "facilitator_ready": _router.readiness().get("ready"),
                 },
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — health check never raises
             return DomainHealth(name="x402", healthy=False, error=str(e))
 
     _health_mod.register_health_check("x402", _health_check)
@@ -86,21 +86,21 @@ except (ModuleNotFoundError, ImportError):  # pragma: no cover - app.core.health
     pass
 
 __all__ = [
+    "SUPPORTED_ASSETS",
+    "SUPPORTED_NETWORKS",
+    "VERIFICATION_STATUS",
+    "X402_PRICING",
+    "X402_VERSION",
     "FacilitatorRouter",
     "PaymentFacilitator",
     "PaymentOption",
     "PaymentReceipt",
     "PaymentRequirement",
     "PaymentResponse",
-    "SUPPORTED_ASSETS",
-    "SUPPORTED_NETWORKS",
     "ToolCatalog",
     "ToolCatalogEntry",
     "ToolPricing",
-    "VERIFICATION_STATUS",
     "VerifyResult",
-    "X402_PRICING",
-    "X402_VERSION",
     "X402Tier",
     "asset_to_atomic",
     "build_multi_asset_accepts",

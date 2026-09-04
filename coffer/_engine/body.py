@@ -65,9 +65,7 @@ LEGACY_TO_CAIP2: dict[str, str] = {
 }
 
 # Which assets each CAIP-2 network accepts — derived from the canonical table.
-NETWORK_ASSETS: dict[str, list[str]] = {
-    network: list(assets) for network, assets in SUPPORTED_ASSETS.items()
-}
+NETWORK_ASSETS: dict[str, list[str]] = {network: list(assets) for network, assets in SUPPORTED_ASSETS.items()}
 
 # Stablecoin USD-per-unit is 1:1; volatile assets use a static fallback quote
 # (a live oracle would refine this; contract §4). Mirrors x402-py
@@ -150,9 +148,7 @@ def _option(
             "decimals": int(entry.get("decimals") or 6),
             "priceUsd": price_usd,
             "usdPerUnit": unit_usd,
-            "usdPerUnitSource": (
-                "stablecoin" if asset.upper() in _STABLECOIN_ASSETS else "static-default"
-            ),
+            "usdPerUnitSource": ("stablecoin" if asset.upper() in _STABLECOIN_ASSETS else "static-default"),
         },
     }
 

@@ -30,8 +30,9 @@ cannot perform, so it is flagged [REVIEW] and remains a facilitator duty.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from coffer._engine.extensions.permit import (
     EIP2612_KEY,
@@ -163,11 +164,7 @@ class GasSponsoringFacilitator:
         exts: Any = (self.payment or {}).get("extensions") or {}
         info = exts.get(flow, {}) if (isinstance(exts, dict) and flow != "none") else {}
         kind = (
-            "eip2612"
-            if flow == EIP2612_KEY
-            else "erc20-approval"
-            if flow == ERC20_APPROVAL_KEY
-            else "none"
+            "eip2612" if flow == EIP2612_KEY else "erc20-approval" if flow == ERC20_APPROVAL_KEY else "none"
         )
         errors = _validate_permit2_approval_payload(info, flow) if flow != "none" else []
         if errors:
@@ -249,9 +246,7 @@ def register_gas_sponsoring_facilitator(
             return VerifyResult(
                 verified=is_settled,
                 reason=(
-                    ""
-                    if is_settled
-                    else f"scaffolded:{prepped['scaffolded']} flow={prepped['sponsor_flow']}"
+                    "" if is_settled else f"scaffolded:{prepped['scaffolded']} flow={prepped['sponsor_flow']}"
                 ),
                 asset=(payment or {}).get("asset") or "",
                 network=network,

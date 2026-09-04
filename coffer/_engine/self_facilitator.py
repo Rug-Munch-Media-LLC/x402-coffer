@@ -75,9 +75,7 @@ class SelfFacilitator:
             return int(v).to_bytes(32, "big")
 
         domain_type = keccak(
-            text=(
-                "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-            )
+            text=("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
         )
         struct_type = keccak(
             text="TransferWithAuthorization(address from,address to,uint256 value,"
@@ -88,11 +86,7 @@ class SelfFacilitator:
             os.getenv("X402_EIP712_VERSION", "2"),
         )
         domain = keccak(
-            domain_type
-            + keccak(text=name)
-            + keccak(text=version)
-            + enc_uint(chain_id)
-            + enc_addr(token)
+            domain_type + keccak(text=name) + keccak(text=version) + enc_uint(chain_id) + enc_addr(token)
         )
         nonce = self._nonce_bytes(auth.get("nonce"))
         struct = keccak(
@@ -212,7 +206,7 @@ class SelfFacilitator:
                     asset=asset,
                     network=network,
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — auth verification failure → reject
             return VerifyResult(
                 verified=False,
                 reason=f"cannot verify authorization: {e}",
@@ -239,22 +233,25 @@ class SelfFacilitator:
         if value < required_atomic:
             return VerifyResult(
                 verified=False,
-                reason=f"underpayment: authorized {value} < required {required_atomic}"
-                f" atomic {asset}",
+                reason=f"underpayment: authorized {value} < required {required_atomic} atomic {asset}",
                 signer=recovered,
                 asset=asset,
                 network=network,
             )
 
         to_addr = str(auth.get("to") or "").lower().lstrip("0x")
-        if to_addr and ("0x" + to_addr).lower() != self.pay_to and to_addr.lower() != self.pay_to:
-            if str(auth.get("to") or "").lower() != self.pay_to:
-                return VerifyResult(
-                    verified=False,
-                    reason=f"recipient {auth.get('to')} != configured payTo {self.pay_to}",
-                    asset=asset,
-                    network=network,
-                )
+        if (
+            to_addr
+            and ("0x" + to_addr).lower() != self.pay_to
+            and to_addr.lower() != self.pay_to
+            and str(auth.get("to") or "").lower() != self.pay_to
+        ):
+            return VerifyResult(
+                verified=False,
+                reason=f"recipient {auth.get('to')} != configured payTo {self.pay_to}",
+                asset=asset,
+                network=network,
+            )
 
         import time as _t
 
@@ -307,7 +304,7 @@ class SelfFacilitator:
             from eth_account import Account  # type: ignore[import-untyped]
 
             calldata = self._transfer_with_auth_calldata(auth)
-        except Exception:
+        except Exception:  # noqa: BLE001 — calldata build failure → no tx
             return None
         try:
             payer = Account.from_key(self.facilitator_key.removeprefix("0x")).address

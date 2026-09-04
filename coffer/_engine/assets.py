@@ -68,7 +68,7 @@ def normalize_caip2_network(value: str) -> str:
 def _require_caip2(value: Any) -> str:
     """Shared validator body for required ``network`` fields."""
     if not isinstance(value, str):
-        raise ValueError("network must be a string")
+        raise TypeError("network must be a string")
     return normalize_caip2_network(value)
 
 

@@ -48,9 +48,7 @@ class PaymentStore:
             try:
                 import redis as _sync_redis  # type: ignore[import-untyped]
 
-                self._redis = _sync_redis.Redis.from_url(
-                    redis_url, decode_responses=True, socket_timeout=1.0
-                )
+                self._redis = _sync_redis.Redis.from_url(redis_url, decode_responses=True, socket_timeout=1.0)
                 self._redis.ping()
             except Exception:  # noqa: BLE001 — degrade to memory-only
                 self._redis = None
@@ -77,9 +75,7 @@ class PaymentStore:
             "facilitator": facilitator,
             "verified": verified,
             "caller_key": caller_key or "",
-            "expires_at": (
-                datetime.now(UTC) + timedelta(seconds=self.validity_seconds)
-            ).isoformat(),
+            "expires_at": (datetime.now(UTC) + timedelta(seconds=self.validity_seconds)).isoformat(),
             "verified_at": datetime.now(UTC).isoformat(),
         }
         if self._redis is not None:
@@ -91,7 +87,7 @@ class PaymentStore:
                     self.validity_seconds,
                     _json.dumps(self._records[payment_id]),
                 )
-            except Exception:  # noqa: BLE001 — never break recording on redis
+            except Exception:  # noqa: BLE001, S110 — never break recording on redis
                 pass
 
     def is_paid(self, payment_id: str, caller_key: str = "") -> bool:
@@ -111,7 +107,7 @@ class PaymentStore:
                     rec = _json.loads(raw)
                     if datetime.fromisoformat(rec["expires_at"]) > datetime.now(UTC):
                         self._records[payment_id] = rec
-            except Exception:  # noqa: BLE001 — mirror is best-effort
+            except Exception:  # noqa: BLE001, S110 — mirror is best-effort
                 pass
         rec = self._records.get(payment_id)
         if rec is None or not rec.get("verified"):
@@ -125,9 +121,7 @@ class PaymentStore:
         except ValueError:
             return False
         stored_caller = rec.get("caller_key") or ""
-        if stored_caller and (not caller_key or stored_caller != caller_key):
-            return False
-        return True
+        return not (stored_caller and (not caller_key or stored_caller != caller_key))
 
     def get(self, payment_id: str) -> dict[str, Any] | None:
         """Return the raw record for a payment id, if present."""

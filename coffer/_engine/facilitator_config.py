@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+
 # Production MUST set X402_WALLET (canonical EVM payee). Legacy names
 # X402_PAY_TO / X402_EVM_PAY_TO are honored as read-time aliases. There is NO
 # hardcoded wallet default: unset resolves to "" and create_app()/config.py
@@ -30,9 +31,7 @@ X402_NETWORK_WALLETS = {
     "eip155:137": os.getenv("X402_WALLET_POLYGON", X402_WALLET),
     "eip155:84532": os.getenv("X402_WALLET_BASE_SEPOLIA", X402_WALLET),
     "eip155:11155111": os.getenv("X402_WALLET_ETH_SEPOLIA", X402_WALLET),
-    "solana:mainnet": _env_first(
-        "X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET"
-    ),
+    "solana:mainnet": _env_first("X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET"),
     "tron:mainnet": _env_first("X402_WALLET_TRON", "X402_TRON_PAY_TO"),
 }
 X402_SELF_FACILITATE = os.getenv("X402_SELF_FACILITATE", "1").lower() in ("1", "true")

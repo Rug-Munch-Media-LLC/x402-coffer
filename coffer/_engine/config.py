@@ -117,7 +117,7 @@ class X402Settings(BaseModel):
     )
 
     @classmethod
-    def from_env(cls, env: dict[str, str] | None = None) -> "X402Settings":
+    def from_env(cls, env: dict[str, str] | None = None) -> X402Settings:
         """Build settings from the process (or an explicit mapping) environ."""
         e = os.environ if env is None else env
 
@@ -136,18 +136,14 @@ class X402Settings(BaseModel):
             pay_to=g("X402_PAY_TO", "").lower(),
             # Canonical env schema: X402_WALLET (EVM), X402_WALLET_SOLANA,
             # X402_WALLET_TRON. Old names are read-time aliases only.
-            wallet=first(
-                "X402_WALLET", "X402_PAY_TO", "X402_EVM_PAY_TO", "X402_BASE_WALLET"
-            ).lower(),
+            wallet=first("X402_WALLET", "X402_PAY_TO", "X402_EVM_PAY_TO", "X402_BASE_WALLET").lower(),
             wallet_base=g("X402_WALLET_BASE", "").lower(),
             wallet_eth=g("X402_WALLET_ETH", "").lower(),
             wallet_arbitrum=g("X402_WALLET_ARBITRUM", "").lower(),
             wallet_optimism=g("X402_WALLET_OPTIMISM", "").lower(),
             wallet_polygon=g("X402_WALLET_POLYGON", "").lower(),
             wallet_tron=first("X402_WALLET_TRON", "X402_TRON_PAY_TO").lower(),
-            wallet_solana=first(
-                "X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET"
-            ).strip(),
+            wallet_solana=first("X402_WALLET_SOLANA", "X402_SOL_PAY_TO", "X402_SOLANA_WALLET").strip(),
             evm_pay_to=first("X402_EVM_PAY_TO", "X402_WALLET").lower(),
             sol_pay_to=first("X402_SOL_PAY_TO", "X402_WALLET_SOLANA").strip(),
             btc_pay_to=g("X402_BTC_PAY_TO", "").strip(),
@@ -209,7 +205,7 @@ class X402Settings(BaseModel):
         candidates = [self.wallet, self.pay_to] + list(self.network_wallets.values())
         return any(str(c).strip().lower() not in _UNCONFIGURED_MARKERS for c in candidates)
 
-    def assert_configured(self) -> "X402Settings":
+    def assert_configured(self) -> X402Settings:
         """Fail closed when no receiving wallet is configured."""
         missing = [name for name in REQUIRED if not self.wallet_configured]
         if missing:
@@ -301,7 +297,7 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
     )
 
     @app.get("/")
-    async def root() -> dict[str, Any]:  # noqa: D401
+    async def root() -> dict[str, Any]:
         return {
             "product": "Coffer",
             "version": __version__,

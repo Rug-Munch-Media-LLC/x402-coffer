@@ -71,15 +71,9 @@ class CallerSpendTracker:
                 return False, f"over_per_payment_limit:{amount_atomic}>{policy.max_per_payment}"
             window_spend = self._prune(caller, window_start)
             count = len(self._history.get(caller, ()))
-            if (
-                policy.max_payments_per_window is not None
-                and count >= policy.max_payments_per_window
-            ):
+            if policy.max_payments_per_window is not None and count >= policy.max_payments_per_window:
                 return False, f"over_velocity_limit:{count}>={policy.max_payments_per_window}"
-            if (
-                policy.max_window_spend is not None
-                and window_spend + amount_atomic > policy.max_window_spend
-            ):
+            if policy.max_window_spend is not None and window_spend + amount_atomic > policy.max_window_spend:
                 return (
                     False,
                     f"over_window_spend:{window_spend + amount_atomic}>{policy.max_window_spend}",

@@ -39,7 +39,7 @@ class ReplayStore:
                 from redis import asyncio as aioredis  # type: ignore[import-untyped]
 
                 self._redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-            except Exception as e:  # pragma: no cover - defensive
+            except Exception as e:  # noqa: BLE001 - pragma: no cover - defensive
                 log.warning("x402_replay_redis_unavailable", extra={"error": str(e)})
                 self._redis_broken = True
 
@@ -58,7 +58,7 @@ class ReplayStore:
                 # Redis SETNX with 24h TTL — atomic claim of the nonce.
                 ok = await self._redis.set(key, "1", ex=self.ttl, nx=True)
                 return bool(ok)
-            except Exception as e:  # pragma: no cover - runtime redis failure
+            except Exception as e:  # noqa: BLE001 - pragma: no cover - runtime redis failure
                 log.warning("x402_replay_redis_error", extra={"error": str(e)})
                 self._redis_broken = True
                 self._redis = None
@@ -76,6 +76,6 @@ class ReplayStore:
             try:
                 exists = await self._redis.get(key)
                 return bool(exists)
-            except Exception:  # pragma: no cover
+            except Exception:  # noqa: BLE001 - pragma: no cover
                 return key in self._mem
         return key in self._mem

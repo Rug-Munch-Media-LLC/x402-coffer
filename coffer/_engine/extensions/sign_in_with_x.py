@@ -92,9 +92,7 @@ def _recover_eip191(message: str, signature_hex: str) -> tuple[str | None, str]:
 class SIWXChallengeStore:
     """Bounded store of outstanding challenges (nonce -> metadata)."""
 
-    def __init__(
-        self, ttl_seconds: int = DEFAULT_CHALLENGE_TTL_SECONDS, max_entries: int = 10_000
-    ) -> None:
+    def __init__(self, ttl_seconds: int = DEFAULT_CHALLENGE_TTL_SECONDS, max_entries: int = 10_000) -> None:
         self.ttl = int(ttl_seconds)
         self._max = int(max_entries)
         self._lock = threading.Lock()
@@ -150,9 +148,7 @@ class SIWXChallengeStore:
 class SIWXSessionStore:
     """Bounded, caller-bound session tokens granted after verification."""
 
-    def __init__(
-        self, ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS, max_entries: int = 50_000
-    ) -> None:
+    def __init__(self, ttl_seconds: int = DEFAULT_SESSION_TTL_SECONDS, max_entries: int = 50_000) -> None:
         self.ttl = int(ttl_seconds)
         self._max = int(max_entries)
         self._lock = threading.Lock()
@@ -313,9 +309,7 @@ def register_siwx_router(*, domain: str = "coffer.local") -> Any:
     async def challenge(body: dict[str, Any]) -> dict[str, Any]:
         chain_id = str(body.get("chainId") or body.get("chain_id") or "eip155:8453")
         if not chain_id.startswith("eip155:"):
-            raise HTTPException(
-                status_code=422, detail=f"needs_verifier:{chain_id} (EVM only, honest scope)"
-            )
+            raise HTTPException(status_code=422, detail=f"needs_verifier:{chain_id} (EVM only, honest scope)")
         return challenges.create(
             domain=domain,
             chain_id=chain_id,

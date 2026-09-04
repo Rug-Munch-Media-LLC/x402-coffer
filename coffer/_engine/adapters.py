@@ -26,8 +26,8 @@ from .body import (
 from .store import PaymentStore, get_default_store
 
 __all__ = [
-    "ASGIApp",
     "HEADER_X_PAYMENT_ID",
+    "ASGIApp",
     "X402Middleware",
     "caller_key_from_request",
     "caller_key_from_scope",
@@ -109,8 +109,7 @@ class X402Middleware:
             return
         raw_headers = scope.get("headers") or []
         headers = {
-            str(name.decode("latin-1")).lower(): str(value.decode("latin-1"))
-            for name, value in raw_headers
+            str(name.decode("latin-1")).lower(): str(value.decode("latin-1")) for name, value in raw_headers
         }
         caller_key = caller_key_from_scope(scope)
         payment_id = headers.get(HEADER_X_PAYMENT_ID.lower(), "")
@@ -165,9 +164,7 @@ def require_payment(
                 return True
             body = payment_required_body()
             log.debug("x402_payment_required", extra={"handler": getattr(fn, "__name__", "")})
-            return JSONResponse(
-                status_code=402, content=body, headers=payment_required_headers(body)
-            )
+            return JSONResponse(status_code=402, content=body, headers=payment_required_headers(body))
 
         if inspect.iscoroutinefunction(fn):
 

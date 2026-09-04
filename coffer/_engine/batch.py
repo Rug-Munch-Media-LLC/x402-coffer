@@ -20,7 +20,6 @@ from typing import Any
 
 from .facilitator_config import PAYMENT_VALIDITY_SECONDS, X402_DEFAULT_ASSET, X402_DEFAULT_NETWORK
 from .facilitator_router import get_facilitator_router
-from .assets import SUPPORTED_ASSETS, SUPPORTED_NETWORKS
 from .pricing import X402_PRICING
 from .scheme import _to_atomic, build_payment_required
 

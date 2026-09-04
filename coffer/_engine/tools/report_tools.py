@@ -3,9 +3,7 @@
 from typing import Any
 
 
-async def generate_report(
-    subject_type: str, subject_id: str, model: str = "deepseek-v3"
-) -> dict[str, Any]:
+async def generate_report(subject_type: str, subject_id: str, model: str = "deepseek-v3") -> dict[str, Any]:
     """Generate a research report."""
     return {
         "report_id": "pending",

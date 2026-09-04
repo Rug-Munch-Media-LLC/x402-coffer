@@ -27,9 +27,7 @@ class SettlementLedger:
         self._lock = threading.Lock()
         self._events: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._counters: defaultdict[str, int] = defaultdict(int)
-        self._by_network: defaultdict[str, defaultdict[str, int]] = defaultdict(
-            lambda: defaultdict(int)
-        )
+        self._by_network: defaultdict[str, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def _bump(self, key: str, network: str = "") -> None:
         with self._lock:
@@ -69,7 +67,7 @@ class SettlementLedger:
                 self._events[f"v:{payment_id}:{entry['at']}"] = entry
                 while len(self._events) > self._max:
                     self._events.popitem(last=False)
-        except Exception:  # noqa: BLE001 — observability never breaks payments
+        except Exception:  # noqa: BLE001, S110 — observability never breaks payments
             pass
 
     def record_settle(
@@ -104,7 +102,7 @@ class SettlementLedger:
                 self._events[f"s:{payment_id}:{entry['at']}"] = entry
                 while len(self._events) > self._max:
                     self._events.popitem(last=False)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def snapshot(self) -> dict[str, Any]:
@@ -157,7 +155,7 @@ def observe_verify(result: dict[str, Any], *, payment_id: str, tx_hash: str) -> 
             reason=str(result.get("reason", "")),
             facilitator=str(result.get("facilitator", "")),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
@@ -174,19 +172,15 @@ def observe_settle(result: dict[str, Any], *, payment_id: str, tx_hash: str) -> 
             reason=str(result.get("reason", "")),
             facilitator=str(result.get("facilitator", "")),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001, S110
         pass
 
 
 def _prometheus_text(snapshot: dict[str, Any]) -> str:
     lines = ["# TYPE coffer_verifications_total counter", "# TYPE coffer_settlements_total counter"]
     c = snapshot["counters"]
-    lines.append(
-        f'coffer_verifications_total{{outcome="verified"}} {c.get("verifications_verified", 0)}'
-    )
-    lines.append(
-        f'coffer_verifications_total{{outcome="rejected"}} {c.get("verifications_rejected", 0)}'
-    )
+    lines.append(f'coffer_verifications_total{{outcome="verified"}} {c.get("verifications_verified", 0)}')
+    lines.append(f'coffer_verifications_total{{outcome="rejected"}} {c.get("verifications_rejected", 0)}')
     lines.append(f'coffer_settlements_total{{outcome="success"}} {c.get("settlements_success", 0)}')
     lines.append(f'coffer_settlements_total{{outcome="failed"}} {c.get("settlements_failed", 0)}')
     lines.append(f"coffer_settled_amount_atomic_total {snapshot['settled_amount_atomic_total']}")

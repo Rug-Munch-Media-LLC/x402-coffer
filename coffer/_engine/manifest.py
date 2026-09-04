@@ -15,6 +15,7 @@ Schema:
     deprecated: bool
     successor: optional replacement name
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

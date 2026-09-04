@@ -122,7 +122,7 @@ async def verify(request: Request) -> JSONResponse:
                 identity=identity,
                 amount_atomic=int(result.get("amount_atomic", 0) or 0),
             )
-        except Exception:  # noqa: BLE001 — attribution never breaks verification
+        except Exception:  # noqa: BLE001, S110 — attribution never breaks verification
             pass
 
     if not result.get("verified"):

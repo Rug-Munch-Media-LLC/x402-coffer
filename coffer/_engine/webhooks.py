@@ -49,9 +49,7 @@ class WebhookDispatcher:
         self._subs: list[WebhookSubscriber] = []
         self._max_retries = int(max_retries)
 
-    def register(
-        self, url: str, *, secret: str = "", events: set[str] | None = None
-    ) -> WebhookSubscriber:
+    def register(self, url: str, *, secret: str = "", events: set[str] | None = None) -> WebhookSubscriber:
         sub = WebhookSubscriber(
             url=url,
             secret=secret,
@@ -86,7 +84,7 @@ class WebhookDispatcher:
                         if 200 <= r.status_code < 300:
                             ok = True
                             break
-                    except httpx.HTTPError:  # noqa: PERF203 — retry loop
+                    except httpx.HTTPError:
                         pass
                     if attempt < self._max_retries - 1:
                         await asyncio.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))

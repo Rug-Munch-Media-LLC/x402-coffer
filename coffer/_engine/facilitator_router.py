@@ -201,9 +201,7 @@ class FacilitatorRouter:
 
         # Self-hosted / custom impl path (default).
         if self.self_hosted or self._impl_for(network_id) is not None:
-            result = await self._verify_self_hosted(
-                payment_id, tx_hash, network_id, asset, amount_usd
-            )
+            result = await self._verify_self_hosted(payment_id, tx_hash, network_id, asset, amount_usd)
             if result.get("verified"):
                 ok, reason = await self._enforce_replay(tx_hash, network_id)
                 if not ok:
@@ -217,9 +215,7 @@ class FacilitatorRouter:
             return result
 
         # External facilitator path.
-        verified_result = await verify_external(
-            self, payment_id, tx_hash, network_id, asset, amount_usd
-        )
+        verified_result = await verify_external(self, payment_id, tx_hash, network_id, asset, amount_usd)
         from coffer._engine.observability import observe_verify
         from coffer._engine.webhooks import emit_payment_event
 
@@ -246,7 +242,7 @@ class FacilitatorRouter:
         payment = self._build_payment(payment_id, tx_hash, network_id, asset, amount_usd)
         try:
             result: Any = await impl.verify(payment)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — facilitator verify never raises
             result = VerifyResult(verified=False, reason=f"facilitator verify error: {e}")
         if getattr(result, "verified", False):
             return {
@@ -303,9 +299,7 @@ class FacilitatorRouter:
         network_id = normalize_network_id(network)
         recipient = X402_NETWORK_WALLETS.get(network_id) or X402_WALLET
         rpc_url = os.getenv("X402_TRON_RPC", "https://api.trongrid.io")
-        fallbacks = [
-            u.strip() for u in os.getenv("X402_TRON_RPC_FALLBACKS", "").split(",") if u.strip()
-        ]
+        fallbacks = [u.strip() for u in os.getenv("X402_TRON_RPC_FALLBACKS", "").split(",") if u.strip()]
 
         result = await verify_tron_payment(
             tx_hash=tx_hash,
@@ -347,8 +341,7 @@ class FacilitatorRouter:
         if entry is None:
             return {
                 "verified": False,
-                "reason": f"needs_facilitator: asset {asset!r} not in SUPPORTED_ASSETS "
-                f"for {network_id}",
+                "reason": f"needs_facilitator: asset {asset!r} not in SUPPORTED_ASSETS for {network_id}",
                 "settlement": None,
                 "scaffolded": True,
                 "network": network_id,
@@ -363,8 +356,7 @@ class FacilitatorRouter:
             }
         return {
             "verified": False,
-            "reason": "needs_facilitator: on-chain settlement verification "
-            "not implemented for this chain",
+            "reason": "needs_facilitator: on-chain settlement verification not implemented for this chain",
             "settlement": None,
             "scaffolded": True,
             "network": network_id,
@@ -399,9 +391,7 @@ class FacilitatorRouter:
             }
 
         if self.self_hosted or self._impl_for(network_id) is not None:
-            return await self._settle_self_hosted(
-                payment_id, tx_hash, network_id, asset, amount_usd
-            )
+            return await self._settle_self_hosted(payment_id, tx_hash, network_id, asset, amount_usd)
 
         payload = {
             "paymentId": payment_id,
@@ -423,9 +413,7 @@ class FacilitatorRouter:
                     response.raise_for_status()
                     data = response.json()
                     self._mark_success(config)
-                    settled = normalize_settlement(
-                        data, payment_id, tx_hash, network_id, config.name
-                    )
+                    settled = normalize_settlement(data, payment_id, tx_hash, network_id, config.name)
                     from coffer._engine.observability import observe_settle
 
                     observe_settle(settled, payment_id=payment_id, tx_hash=tx_hash)
@@ -459,8 +447,7 @@ class FacilitatorRouter:
             return {
                 "success": False,
                 "payment_id": payment_id,
-                "reason": "needs_facilitator: settlement verification "
-                "not implemented for this chain",
+                "reason": "needs_facilitator: settlement verification not implemented for this chain",
                 "scaffolded": True,
                 "network": network_id,
             }
@@ -479,7 +466,7 @@ class FacilitatorRouter:
         payment = self._build_payment(payment_id, tx_hash, network_id, asset, amount_usd)
         try:
             settled_tx = await impl.settle(payment)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — settle failure is handled below
             settled_tx = None
             log.warning("x402_self_settle_error", extra={"error": str(e)})
         if settled_tx:

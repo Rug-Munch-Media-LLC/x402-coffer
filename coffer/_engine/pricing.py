@@ -43,11 +43,7 @@ def network_family(network: str) -> str:
         return "tron"
     if n.startswith("eip155:"):
         return "evm"
-    return (
-        "evm"
-        if n in {k for k, v in _NETWORK_ALIASES.items() if v.startswith("eip155:")}
-        else "unknown"
-    )
+    return "evm" if n in {k for k, v in _NETWORK_ALIASES.items() if v.startswith("eip155:")} else "unknown"
 
 
 # Spec §3: decimals per asset family (stablecoins 6, ERC-20 natives 18, SOL 9).
@@ -176,7 +172,7 @@ def asset_to_atomic(amount_usd: float, asset: str, network: str) -> int:
         raise ValueError(f"no USD price available for {asset}")
     decimals = int(entry["decimals"])
     required = Decimal(str(amount_usd)) / Decimal(str(quote.usd)) * Decimal(10**decimals)
-    return int(math.ceil(float(required) - 1e-9))
+    return math.ceil(float(required) - 1e-9)
 
 
 # ── Server-authoritative pricing (§4) ────────────────────────────────────────
@@ -238,9 +234,7 @@ def resolve_price_usd(op: str, network: str, asset: str) -> float:
     return float(op_table.get("default_price", 0.01))
 
 
-def validate_client_amount(
-    op: str, client_usd: float | None, asset: str, network: str
-) -> tuple[bool, str]:
+def validate_client_amount(op: str, client_usd: float | None, asset: str, network: str) -> tuple[bool, str]:
     """Validate a client-supplied USD amount in ATOMIC units.
 
     Never trust the client: reject non-finite/negative amounts and underpayment

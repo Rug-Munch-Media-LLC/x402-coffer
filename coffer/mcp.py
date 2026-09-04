@@ -21,14 +21,14 @@ from __future__ import annotations
 from typing import Any
 
 from coffer._engine import X402_PRICING
-from coffer._engine.tools_router import router as _paid_tools_router
 from coffer._engine.manifest import MCPServerManifest, MCPToolManifest
+from coffer._engine.tools_router import router as _paid_tools_router
 
 __all__ = [
     "COFFER_AUTH_SCOPE",
     "COFFER_SERVER",
-    "MCPToolManifest",
     "MCPServerManifest",
+    "MCPToolManifest",
     "coffer_tool_manifest",
     "tool_price_usd",
 ]

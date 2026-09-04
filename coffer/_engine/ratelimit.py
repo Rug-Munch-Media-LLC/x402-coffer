@@ -19,9 +19,7 @@ from collections import OrderedDict, deque
 class RateLimiter:
     """Sliding-window per-caller limiter."""
 
-    def __init__(
-        self, per_minute: int, *, window_seconds: float = 60.0, max_callers: int = 50_000
-    ) -> None:
+    def __init__(self, per_minute: int, *, window_seconds: float = 60.0, max_callers: int = 50_000) -> None:
         self.per_minute = int(per_minute)
         self.window = float(window_seconds)
         self._max = int(max_callers)

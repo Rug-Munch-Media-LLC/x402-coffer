@@ -47,7 +47,9 @@ __tagline__ = "Your HTTP treasury, sovereign and open."
 __version__ = "5.0.0"
 
 # ── Core domain surface (app/domain/x402) — wins on name collisions ─────────
-from coffer._engine import (  # noqa: E402
+# ── Vendored spec surface (vendor/x402) — spec-only names ───────────────────
+from coffer import _spec as _spec_resolver
+from coffer._engine import (
     SUPPORTED_ASSETS,
     SUPPORTED_NETWORKS,
     VERIFICATION_STATUS,
@@ -67,15 +69,15 @@ from coffer._engine import (  # noqa: E402
     asset_to_atomic,
     build_multi_asset_accepts,
     build_payment_required,
-    extensions,  # noqa: E402,F401  (module alias)
+    extensions,
     flatten_supported_assets,
     get_facilitator_router,
     register_facilitator,
     resolve_price_usd,
     validate_client_amount,
 )
-from coffer._engine import router as x402_router  # noqa: E402  (/v1/x402 surface)
-from coffer._engine.middleware import (  # noqa: E402
+from coffer._engine import router as x402_router
+from coffer._engine.middleware import (
     HEADER_PAYMENT_REQUIRED,
     HEADER_X_PAYMENT_ID,
     HEADER_X_PAYMENT_OPTIONS,
@@ -91,13 +93,10 @@ from coffer._engine.middleware import (  # noqa: E402
     set_default_store,
 )
 
-# ── Vendored spec surface (vendor/x402) — spec-only names ───────────────────
-from coffer import _spec as _spec_resolver  # noqa: E402
-
 spec: Any = _spec_resolver.resolve_spec_module()
 SPEC_SOURCE: str = _spec_resolver.SPEC_SOURCE
 
-import importlib as _importlib  # noqa: E402
+import importlib as _importlib
 
 # Spec middleware is not re-exported by the vendored package root; bind it.
 _spec_middleware: Any = _importlib.import_module("x402.middleware")
@@ -123,7 +122,7 @@ DEFAULT_SOLANA_RPC_URL: str = spec.DEFAULT_SOLANA_RPC_URL
 # Spec exception raised when no framework adapter can render a 402.
 PaymentRequired: Any = _spec_middleware.PaymentRequired
 
-__all__ = [
+__all__ = [  # noqa: RUF022 — intentionally grouped by category
     # brand / meta
     "__product__",
     "__tagline__",

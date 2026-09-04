@@ -56,7 +56,7 @@ SOLANA_RPC_COMMITMENT = "confirmed"
 # SPL Token program id — sanity-check the parsed instruction came from the
 # canonical token program, not a custom program with a spoofed "parsed".
 # Public constant, not a secret.
-SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # noqa: S105
+SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 
 # Only transferChecked carries the mint in jsonParsed output; a plain SPL
 # ``transfer`` cannot be attributed to USDC without extra account-resolution.
@@ -175,8 +175,7 @@ def _owner_token_accounts(result: dict[str, Any], owner: str) -> dict[str, set[s
 
 
 def _amount_usd_value(amount_atomic: int, decimals: int, usdc_price_usd: float) -> float:
-    if decimals < 0:
-        decimals = 0
+    decimals = max(decimals, 0)
     denom = 10**decimals
     return float(round(amount_atomic / denom * usdc_price_usd, 6)) if denom else 0.0
 
@@ -233,9 +232,7 @@ def _confirmed_at(result: dict[str, Any]) -> str:
         return ""
 
 
-async def _post_rpc(
-    url: str, payload: dict[str, Any]
-) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+async def _post_rpc(url: str, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """POST one JSON-RPC request to ``url``.
 
     Returns ``(data, None)`` when the RPC produced an authoritative JSON
@@ -325,8 +322,7 @@ async def verify_solana_payment(
     if rpc_error is not None:
         if isinstance(rpc_error, dict):
             return _failure(
-                f"rpc_error_response: {rpc_error.get('code', '')} "
-                f"{rpc_error.get('message', '')}".strip()
+                f"rpc_error_response: {rpc_error.get('code', '')} {rpc_error.get('message', '')}".strip()
             )
         return _failure(f"rpc_error_response: {rpc_error}")
 
@@ -349,9 +345,7 @@ async def verify_solana_payment(
 
     instructions = _iter_spl_instructions(result)
     if not instructions:
-        return _failure(
-            "no_spl_transfer_found: no parsed splToken transferChecked instruction", slot=slot
-        )
+        return _failure("no_spl_transfer_found: no parsed splToken transferChecked instruction", slot=slot)
 
     # Token accounts owned by the recipient: a transferChecked ``destination``
     # is normally the recipient's associated token account, not the wallet.
@@ -381,8 +375,7 @@ async def verify_solana_payment(
     if not matches:
         if mint_mismatch:
             return _failure(
-                f"wrong_mint: transfer destination belongs to recipient "
-                f"but mint is not {expected_mint}",
+                f"wrong_mint: transfer destination belongs to recipient but mint is not {expected_mint}",
                 slot=slot,
             )
         if recipient_mismatch_dest:
@@ -391,9 +384,7 @@ async def verify_solana_payment(
                 f"expected {expected_recipient} (or one of its token accounts)",
                 slot=slot,
             )
-        return _failure(
-            f"no_payment_found: no {expected_mint} transferChecked to recipient", slot=slot
-        )
+        return _failure(f"no_payment_found: no {expected_mint} transferChecked to recipient", slot=slot)
 
     # Prefer the largest matching transfer (one x402 payment = one transfer).
     paid_atomic, decimals, payer = max(matches, key=lambda item: item[0])

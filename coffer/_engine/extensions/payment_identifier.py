@@ -33,7 +33,7 @@ PAYMENT_ID_MAX_LENGTH = 128
 PAYMENT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # Idempotency cache TTL (spec §Configuration Options: short 5-15m, long 1-24h).
-DEFAULT_IDEMPOTENCY_TTL = int(3600)  # 1h
+DEFAULT_IDEMPOTENCY_TTL = 3600  # 1h
 # Spec §Request Binding: parts that make a paid operation unique.
 _FINGERPRINT_FIELDS = ("scheme", "network", "asset", "amount", "pay_to")
 _RESOURCE_FIELDS = ("resource", "method", "operation")
@@ -189,12 +189,16 @@ class PaymentIdentifierStore:
         semantics per spec §Idempotency Behavior table.
         """
         if not payment_id:
-            return PaymentIdReplay(
-                state="missing",
-                reason="payment id missing",
-            ) if required else PaymentIdReplay(
-                state="accepted",
-                reason="no payment id (idempotency skipped)",
+            return (
+                PaymentIdReplay(
+                    state="missing",
+                    reason="payment id missing",
+                )
+                if required
+                else PaymentIdReplay(
+                    state="accepted",
+                    reason="no payment id (idempotency skipped)",
+                )
             )
         if not is_valid_payment_id(payment_id):
             return PaymentIdReplay(state="missing", reason="invalid payment id")
@@ -204,9 +208,7 @@ class PaymentIdentifierStore:
         # 409 Conflict: same id already used for a different request.
         claimed = self._claims.get(payment_id)
         if claimed is not None and claimed != fingerprint:
-            return PaymentIdReplay(
-                "conflict", "payment id reused for a different request", payment_id
-            )
+            return PaymentIdReplay("conflict", "payment id reused for a different request", payment_id)
 
         # Cached within TTL -> serve cached, skip payment.
         if await self._store.check(key):

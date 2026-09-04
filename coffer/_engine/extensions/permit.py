@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -39,12 +40,8 @@ PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3"
 
 # EIP-712 domain + Permit typehashes (EIP-2612). Mirrors self_facilitator.py's
 # EIP-3009 approach: the domain structure is the SAME; only the struct differs.
-_EIP712_DOMAIN_STRING = (
-    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-)
-_PERMIT_STRING = (
-    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-)
+_EIP712_DOMAIN_STRING = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+_PERMIT_STRING = "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
 _PERMIT_SELECTOR = "0xd505accf"  # permit(address,address,uint256,uint256,uint8,bytes32,bytes32)
 
 # Optional ecrecover-aware crypto layer (eth_keys/eth_utils are pyproject deps).
@@ -105,9 +102,7 @@ def _to_int(value: Any) -> int:
     raise ValueError(f"cannot parse {value!r} as integer")
 
 
-def _eip2612_domain_separator(
-    *, name: str, version: str, chain_id: int, token_address: str
-) -> bytes:
+def _eip2612_domain_separator(*, name: str, version: str, chain_id: int, token_address: str) -> bytes:
     """EIP-712 domain separator for an EIP-2612 token (verifyingContract = token)."""
     keccak_fn = keccak
     if keccak_fn is None:
@@ -121,9 +116,7 @@ def _eip2612_domain_separator(
     )
 
 
-def _permit_struct_hash(
-    *, owner: str, spender: str, value: int, nonce: int, deadline: int
-) -> bytes:
+def _permit_struct_hash(*, owner: str, spender: str, value: int, nonce: int, deadline: int) -> bytes:
     """EIP-712 struct hash of ``Permit(address owner,address spender,uint256
     value,uint256 nonce,uint256 deadline)`` (EIP-2612)."""
     keccak_fn = keccak
@@ -162,9 +155,7 @@ def eip2612_digest(
     domain = _eip2612_domain_separator(
         name=name, version=version, chain_id=chain_id, token_address=token_address
     )
-    struct = _permit_struct_hash(
-        owner=owner, spender=spender, value=value, nonce=nonce, deadline=deadline
-    )
+    struct = _permit_struct_hash(owner=owner, spender=spender, value=value, nonce=nonce, deadline=deadline)
     return keccak_fn(b"\x19\x01" + domain + struct)
 
 
@@ -208,9 +199,7 @@ def _parse_permit_fields(payload: dict[str, Any]) -> tuple[dict[str, Any] | None
         return None, "missing/invalid permit 'token' (verifyingContract)"
     try:
         value = _to_int(
-            payload.get("amount")
-            if payload.get("amount") is not None
-            else payload.get("value") or 0
+            payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0
         )
         nonce = _to_int(payload.get("nonce") or 0)
         deadline = _to_int(payload.get("deadline") or 0)
@@ -252,12 +241,8 @@ def _recover_owner(*, digest: bytes, v_norm: int, r: bytes, s: bytes) -> tuple[s
     if eth_keys is None or to_cs is None:
         return None, "eip2612 crypto unavailable: eth_keys not installed"
     try:
-        signature_obj = eth_keys.Signature(
-            vrs=(v_norm, int.from_bytes(r, "big"), int.from_bytes(s, "big"))
-        )
-        recovered_addr = to_cs(
-            eth_keys.PublicKey.recover_from_msg_hash(digest, signature_obj).to_address()
-        )
+        signature_obj = eth_keys.Signature(vrs=(v_norm, int.from_bytes(r, "big"), int.from_bytes(s, "big")))
+        recovered_addr = to_cs(eth_keys.PublicKey.recover_from_msg_hash(digest, signature_obj).to_address())
         return recovered_addr, ""
     except Exception as e:  # noqa: BLE001 - fail closed on any recover error
         return None, f"cannot recover permit signer: {e}"
@@ -334,9 +319,7 @@ def build_permit_calldata(
     never a fabricated tx hash. Raises if the payload is not a valid,
     locally-verified permit.
     """
-    ok, reason, _owner = verify_permit_signature(
-        payload, chain_id=chain_id, name=name, version=version
-    )
+    ok, reason, _owner = verify_permit_signature(payload, chain_id=chain_id, name=name, version=version)
     if not ok:
         raise ValueError(f"refusing to build permit calldata: {reason}")
     to_cs = to_checksum_address
@@ -344,9 +327,7 @@ def build_permit_calldata(
         raise RuntimeError("eip2612 crypto unavailable: eth_utils not installed")
     owner = to_cs(str(payload["owner"]))
     spender = to_cs(str(payload.get("spender") or PERMIT2_ADDRESS))
-    value = _to_int(
-        payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0
-    )
+    value = _to_int(payload.get("amount") if payload.get("amount") is not None else payload.get("value") or 0)
     deadline = _to_int(payload.get("deadline") or 0)
     parsed = _parse_signature(payload.get("signature"))
     if parsed is None:
@@ -401,8 +382,8 @@ __all__ = [
     "MAX_UINT256",
     "PERMIT2_ADDRESS",
     "_eip2612_available",
-    "eip2612_digest",
-    "build_permit_calldata",
-    "verify_permit_signature",
     "_validate_permit2_approval_payload",
+    "build_permit_calldata",
+    "eip2612_digest",
+    "verify_permit_signature",
 ]

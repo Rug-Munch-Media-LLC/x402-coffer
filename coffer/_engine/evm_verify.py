@@ -23,8 +23,7 @@ _EIP7702_RPC_DEFAULTS: dict[str, str] = {
     "eip155:42161": "https://arb1.arbitrum.io/rpc",
 }
 EIP7702_RPC: dict[str, str] = {
-    n: os.getenv(f"X402_EIP7702_RPC_{n.split(':')[-1]}", url)
-    for n, url in _EIP7702_RPC_DEFAULTS.items()
+    n: os.getenv(f"X402_EIP7702_RPC_{n.split(':')[-1]}", url) for n, url in _EIP7702_RPC_DEFAULTS.items()
 }
 
 # ── EIP-7702 self-verify fallback ───────────────────────────────────────────
@@ -37,17 +36,13 @@ def _eip7702_wallet(network: str) -> str:
 async def _rpc_call(
     client: httpx.AsyncClient, rpc: str, method: str, params: list[Any]
 ) -> dict[str, Any] | None:
-    response = await client.post(
-        rpc, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-    )
+    response = await client.post(rpc, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
     response.raise_for_status()
     data = response.json()
     return data.get("result") if isinstance(data, dict) else None
 
 
-def _eip7702_matches(
-    tx: dict[str, Any], network: str, asset: str, amount_usd: float
-) -> tuple[bool, str]:
+def _eip7702_matches(tx: dict[str, Any], network: str, asset: str, amount_usd: float) -> tuple[bool, str]:
     """Check an EIP-7702 tx actually paid OUR wallet at least the price.
 
     ERC-20 asset -> transfer() to payTo on the token contract; native asset ->
@@ -100,16 +95,13 @@ def _eip7702_matches(
         if value_atomic < expected_atomic:
             return (
                 False,
-                f"underpayment: tx value {value_atomic} < required "
-                f"{expected_atomic} atomic {asset}",
+                f"underpayment: tx value {value_atomic} < required {expected_atomic} atomic {asset}",
             )
         return True, ""
     return False, f"asset {asset} not self-verifiable via EIP-7702 on {network}"
 
 
-async def _eip7702_verify(
-    tx_hash: str, network: str, asset: str, amount_usd: float
-) -> dict[str, Any]:
+async def _eip7702_verify(tx_hash: str, network: str, asset: str, amount_usd: float) -> dict[str, Any]:
     """Poll RPC for the tx receipt, then assert it paid OUR wallet >= price."""
     network_id = normalize_network_id(network)
     rpc = EIP7702_RPC.get(network_id)

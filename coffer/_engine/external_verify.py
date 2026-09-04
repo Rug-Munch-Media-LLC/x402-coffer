@@ -173,9 +173,7 @@ async def verify_solana(
             "network": network_id,
         }
     rpc = os.getenv("X402_SOLANA_RPC", DEFAULT_SOLANA_RPC_URL)
-    fallbacks = [
-        part.strip() for part in os.getenv(SOLANA_RPC_FALLBACKS_ENV, "").split(",") if part.strip()
-    ]
+    fallbacks = [part.strip() for part in os.getenv(SOLANA_RPC_FALLBACKS_ENV, "").split(",") if part.strip()]
     result = await verify_solana_payment(
         tx_hash,
         recipient,

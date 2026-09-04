@@ -67,6 +67,9 @@ from .assets import (
 
 __all__ = [
     "CAIP2_NETWORK_IDS",
+    "SUPPORTED_ASSETS",
+    "SUPPORTED_NETWORKS",
+    "X402_VERSION",
     "NetworkInfo",
     "PaymentFacilitator",
     "PaymentOption",
@@ -74,14 +77,11 @@ __all__ = [
     "PaymentRequirement",
     "PaymentResponse",
     "Scheme",
-    "SUPPORTED_ASSETS",
-    "SUPPORTED_NETWORKS",
     "SupportedAsset",
     "ToolCatalog",
     "ToolCatalogEntry",
     "ToolPricing",
     "VerifyResult",
-    "X402_VERSION",
     "X402Tier",
     "flatten_supported_assets",
 ]
@@ -155,9 +155,7 @@ class PaymentOption(BaseModel):
     @classmethod
     def _atomic_amount(cls, value: str) -> str:
         if not _ATOMIC_AMOUNT_RE.match(value):
-            raise ValueError(
-                f"maxAmountRequired must be an atomic-unit integer string, got {value!r}"
-            )
+            raise ValueError(f"maxAmountRequired must be an atomic-unit integer string, got {value!r}")
         return value
 
 
@@ -253,9 +251,7 @@ class PaymentResponse(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, populate_by_name=True)
 
     success: bool
-    transaction: str = Field(
-        description="Blockchain transaction hash ('' only if nothing was broadcast)"
-    )
+    transaction: str = Field(description="Blockchain transaction hash ('' only if nothing was broadcast)")
     network: str = Field(description="CAIP-2 network id")
     payment_id: str = ""
     facilitator: str = ""

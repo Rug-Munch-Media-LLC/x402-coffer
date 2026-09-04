@@ -34,7 +34,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 # TRON mainnet USDT contract (TRC-20).
-TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"  # noqa: S105
+TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
 # Default public Trongrid RPC (override per call / env in production).
 DEFAULT_TRON_RPC_URL = "https://api.trongrid.io"
@@ -91,7 +91,7 @@ def _success(
     }
 
 
-def _confirmed_at_from_timestamp(timestamp_ms: int | float | None) -> str:
+def _confirmed_at_from_timestamp(timestamp_ms: float | None) -> str:
     """ISO-8601 UTC timestamp from a millisecond block timestamp."""
     if not isinstance(timestamp_ms, (int, float)):
         return ""
@@ -180,8 +180,7 @@ async def verify_tron_payment(
 
     # Normalize expected recipient to hex for comparison.
     expected_hex = recipient.strip().lower()
-    if expected_hex.startswith("0x"):
-        expected_hex = expected_hex[2:]
+    expected_hex = expected_hex.removeprefix("0x")
     if expected_hex.startswith(TRON_ADDRESS_PREFIX.lower()):
         expected_hex = expected_hex[2:]
 

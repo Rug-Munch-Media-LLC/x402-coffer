@@ -55,9 +55,7 @@ from coffer._engine.extensions.schemes import (
 )
 
 
-def register_all_extensions(
-    router: Any = None, *, gas_sponsor_network: str | None = None
-) -> dict[str, Any]:
+def register_all_extensions(router: Any = None, *, gas_sponsor_network: str | None = None) -> dict[str, Any]:
     """Register every extension entry point on the given FacilitatorRouter.
 
     ``router`` is a :class:`FacilitatorRouter` (the global router is used when
@@ -104,25 +102,25 @@ def register_all_extensions(
 
 
 __all__ = [
-    "BatchSettlementScheme",
     "DEFAULT_DEPOSIT_MULTIPLIER",
     "DEFAULT_IDEMPOTENCY_TTL",
     "EIP2612_KEY",
     "ERC20_APPROVAL_KEY",
-    "GasSponsoringFacilitator",
+    "MAX_UINT256",
     "MIN_DEPOSIT_MULTIPLIER",
     "PAYMENT_IDENTIFIER",
     "PAYMENT_ID_MAX_LENGTH",
     "PAYMENT_ID_MIN_LENGTH",
     "PAYMENT_ID_PATTERN",
-    "PaymentIdReplay",
-    "PaymentIdentifierStore",
     "SCHEME_BATCH_SETTLEMENT",
     "SCHEME_FACTORIES",
     "SCHEME_UPTO",
+    "BatchSettlementScheme",
+    "GasSponsoringFacilitator",
+    "PaymentIdReplay",
+    "PaymentIdentifierStore",
     "UpToScheme",
     "UpToSettlement",
-    "MAX_UINT256",
     "append_payment_identifier_to_extensions",
     "build_scheme",
     "declare_eip2612_gas_sponsoring_extension",
