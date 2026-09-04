@@ -22,7 +22,7 @@ from typing import Any
 from .facilitator_config import PAYMENT_VALIDITY_SECONDS, X402_DEFAULT_ASSET, X402_DEFAULT_NETWORK
 from .facilitator_router import get_facilitator_router
 from .pricing import X402_PRICING
-from .scheme import _to_atomic, build_payment_required
+from .scheme import asset_to_atomic, build_payment_required
 
 # Active batch payment requests: batch_id -> {operations, total_usd, paid, tx_hash}
 _batch_payments: dict[str, dict[str, Any]] = {}
@@ -55,12 +55,12 @@ async def create_batch_payment(operations: list[str]) -> dict[str, Any]:
     payment_required = build_payment_required(
         operation=valid_ops[0],
         resource=f"{_base}/api/batch?ops={','.join(valid_ops)}",
-        description=f"Batch payment for {len(valid_ops)} operations",
     )
     # Override the accepts amount to the batch total
     for acceptance in payment_required.get("accepts", []):
         asset = acceptance.get("asset", X402_DEFAULT_ASSET)
-        acceptance["maxAmountRequired"] = str(_to_atomic(total, asset))
+        network = acceptance.get("network", X402_DEFAULT_NETWORK)
+        acceptance["maxAmountRequired"] = str(asset_to_atomic(total, asset, network))
         acceptance["description"] = f"Batch: {', '.join(valid_ops)}"
         acceptance["extra"]["batch_id"] = batch_id
         acceptance["extra"]["operations"] = valid_ops

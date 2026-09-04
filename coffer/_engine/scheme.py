@@ -67,7 +67,7 @@ class X402Scheme(str, Enum):
     BATCH_SETTLEMENT = "batch-settlement"
 
 
-def negotiate_scheme(client_schemes: list[str] = None, network: str = "", asset: str = "") -> str:
+def negotiate_scheme(client_schemes: list[str] | None = None, network: str = "", asset: str = "") -> str:
     """Select best payment scheme based on client capabilities and network.
 
     Priority: exact-match > network-native > fallback to 'exact'.

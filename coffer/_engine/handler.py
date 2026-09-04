@@ -177,10 +177,6 @@ class X402Handler:
         body = build_payment_required(
             operation,
             resource,
-            accepts,
-            description,
-            preferred_networks=preferred_networks,
-            preferred_assets=preferred_assets,
             multi_asset=multi_asset,
         )
         headers = {
