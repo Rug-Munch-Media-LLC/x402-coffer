@@ -82,6 +82,50 @@ class FacilitatorTimeoutError(Exception):
         super().__init__(f"facilitator {facilitator} timed out")
 
 
+class UsageTracker:
+    """Per-token usage analytics: settlement volume, gas cost, response time per API key."""
+
+    def __init__(self) -> None:
+        self._records: dict[str, dict] = {}
+
+    def record(
+        self,
+        token: str,
+        *,
+        amount_usd: float = 0,
+        gas_used: int = 0,
+        response_ms: int = 0,
+        endpoint: str = "",
+        network: str = "",
+    ) -> None:
+        stats = self._records.setdefault(
+            token,
+            {
+                "total_settlement_volume": 0.0,
+                "total_gas_cost": 0,
+                "total_requests": 0,
+                "avg_response_ms": 0,
+                "by_endpoint": {},
+                "by_network": {},
+            },
+        )
+        stats["total_settlement_volume"] += amount_usd
+        stats["total_gas_cost"] += gas_used
+        stats["total_requests"] += 1
+        stats["avg_response_ms"] = int(
+            (stats["avg_response_ms"] * (stats["total_requests"] - 1) + response_ms) / stats["total_requests"]
+        )
+        if endpoint:
+            stats["by_endpoint"][endpoint] = stats["by_endpoint"].get(endpoint, 0) + 1
+        if network:
+            stats["by_network"][network] = stats["by_network"].get(network, 0) + 1
+
+    def get_stats(self, token: str = "") -> dict:
+        if token:
+            return self._records.get(token, {})
+        return dict(self._records)
+
+
 class X402Handler:
     """Handle x402 pay-per-request payments per the spec.
 
@@ -119,6 +163,8 @@ class X402Handler:
         self._pre_verify_hooks: list = []
         self._post_verify_hooks: list = []
         self._on_verify_failure_hooks: list = []
+        # Per-token usage analytics (settlement volume, gas cost, response time).
+        self.usage = UsageTracker()
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
@@ -273,6 +319,12 @@ class X402Handler:
             self._record_payment(payment_record)
 
         if result.get("verified"):
+            self.usage.record(
+                caller_key or payment_id,
+                amount_usd=amount_usd,
+                endpoint=operation,
+                network=network,
+            )
             for hook in self._post_verify_hooks:
                 try:
                     hook(result)
@@ -382,6 +434,14 @@ class X402Handler:
             # Only index successful settles so a failed attempt can be retried.
             if settlement.get("success") is True:
                 self._settled_txs.setdefault(key, settlement)
+                self.usage.record(
+                    payment_id,
+                    amount_usd=amount_usd,
+                    gas_used=int(settlement.get("gas_used", 0) or 0),
+                    response_ms=int(settlement.get("response_ms", 0) or 0),
+                    endpoint=operation,
+                    network=network,
+                )
                 for hook in self._post_settle_hooks:
                     try:
                         hook(settlement)
