@@ -65,3 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extension mutation policy tests** — validate_scheme_extension test coverage
 - **Auth-capture tests** — authorize/capture/void flow test coverage
 - **Typed error tests** — VerifyError, SettleError, FacilitatorTimeoutError test coverage
+
+### Batch Channels & Escrow (2026-09)
+- **On-chain batch settlement channels** — BatchChannel with voucher/claim/refund model, max_claims_per_batch=100, channel_id binding (from JS @x402/batch-settlement)
+- **Auth-capture escrow EIP-712 PaymentInfo** — pre-approval/authorization/refund expiry windows, min/max fee bounds, capture_authorizer (from JS @x402/auth-capture)
+- **BatchChannel tests** — create/claim/refund/overflow/post-refund coverage
+- **PaymentInfo tests** — expiry/refund/fee validation coverage
