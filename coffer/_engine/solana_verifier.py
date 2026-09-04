@@ -207,6 +207,7 @@ def _success(
     slot: int | None,
     payer: str = "",
     reason: str = "",
+    expected_payer: str = "",
 ) -> dict[str, Any]:
     return {
         "verified": True,
@@ -219,6 +220,8 @@ def _success(
         "reason": reason,
         "slot": slot,
         "payer": payer,
+        "expected_payer": expected_payer,
+        "actual_payer": payer,
     }
 
 
@@ -424,5 +427,4 @@ async def verify_solana_payment(
         slot=slot,
         payer=payer,
         expected_payer=expected_payer,
-        actual_payer=payer,
     )
