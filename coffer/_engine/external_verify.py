@@ -45,9 +45,11 @@ async def verify_external(
     }
     last_error = "No facilitators available"
     async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
-        for config in self.facilitators:
-            if not self._is_healthy(config):
-                continue
+        for config in sorted(
+            (f for f in self.facilitators if self._is_healthy(f)),
+            key=self._health_score,
+            reverse=True,
+        ):
             try:
                 response = await client.post(config.verify_url, json=payload)
                 response.raise_for_status()

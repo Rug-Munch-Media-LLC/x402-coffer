@@ -61,6 +61,7 @@ class FacilitatorRouter:
             key=lambda f: f.priority,
         )
         self._failures: dict[str, tuple[int, float]] = {}
+        self._successes: dict[str, int] = {}
         self.self_hosted = X402_SELF_FACILITATE if self_hosted is None else bool(self_hosted)
         self._self_facilitator: SelfFacilitator | None = None
         self._network_facilitators: dict[str, Any] = {}
@@ -78,12 +79,18 @@ class FacilitatorRouter:
             return True  # half-open: allow a probe after the cooldown window
         return count < 3
 
+    def _health_score(self, config: FacilitatorConfig) -> int:
+        successes = self._successes.get(config.name, 0)
+        failures = self._failures.get(config.name, (0, 0))[0]
+        return successes - failures * 2
+
     def _mark_failure(self, config: FacilitatorConfig) -> None:
         count, _ = self._failures.get(config.name, (0, 0.0))
         self._failures[config.name] = (count + 1, time.time())
         log.warning("x402_facilitator_failure", extra={"facilitator": config.name})
 
     def _mark_success(self, config: FacilitatorConfig) -> None:
+        self._successes[config.name] = self._successes.get(config.name, 0) + 1
         entry = self._failures.get(config.name)
         if entry is None:
             return
@@ -434,9 +441,11 @@ class FacilitatorRouter:
         }
         last_error = "No facilitators available"
         async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
-            for config in self.facilitators:
-                if not self._is_healthy(config) or not config.settle_url:
-                    continue
+            for config in sorted(
+                (f for f in self.facilitators if self._is_healthy(f) and f.settle_url),
+                key=self._health_score,
+                reverse=True,
+            ):
                 try:
                     response = await client.post(config.settle_url, json=payload)
                     response.raise_for_status()
