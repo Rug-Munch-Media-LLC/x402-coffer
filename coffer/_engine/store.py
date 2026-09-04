@@ -121,7 +121,9 @@ class PaymentStore:
         except ValueError:
             return False
         stored_caller = rec.get("caller_key") or ""
-        return not (stored_caller and (not caller_key or stored_caller != caller_key))
+        if stored_caller:
+            return stored_caller == caller_key
+        return True
 
     def get(self, payment_id: str) -> dict[str, Any] | None:
         """Return the raw record for a payment id, if present."""

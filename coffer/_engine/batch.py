@@ -13,6 +13,7 @@ modules.
 
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -50,9 +51,10 @@ async def create_batch_payment(operations: list[str]) -> dict[str, Any]:
         return {"error": "No valid operations provided"}
 
     batch_id = f"batch_{uuid.uuid4().hex[:12]}"
+    _base = os.getenv("X402_BATCH_RESOURCE_BASE", "https://your-domain.com")
     payment_required = build_payment_required(
         operation=valid_ops[0],
-        resource=f"https://pry.dev/api/batch?ops={','.join(valid_ops)}",
+        resource=f"{_base}/api/batch?ops={','.join(valid_ops)}",
         description=f"Batch payment for {len(valid_ops)} operations",
     )
     # Override the accepts amount to the batch total
@@ -115,7 +117,7 @@ async def verify_batch_payment(
     }
 
 
-def is_batch_paid(batch_id: str) -> bool:
+def is_batch_paid(batch_id: str, caller_key: str = "") -> bool:
     """Check whether a batch payment has been verified and is still valid.
 
     Batch payments are in-memory and expire after PAYMENT_VALIDITY_SECONDS;
@@ -131,4 +133,7 @@ def is_batch_paid(batch_id: str) -> bool:
                 return False
         except ValueError:
             return False
+    stored_caller = batch.get("caller_key", "")
+    if stored_caller and stored_caller != caller_key:
+        return False
     return True
