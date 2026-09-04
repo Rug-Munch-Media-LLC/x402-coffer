@@ -44,6 +44,33 @@ from .scheme import (
 logger = logging.getLogger(__name__)
 
 
+class VerifyError(Exception):
+    """Payment verification failed."""
+
+    def __init__(self, reason: str, **extra: Any):
+        self.reason = reason
+        self.extra = extra
+        super().__init__(reason)
+
+
+class SettleError(Exception):
+    """Payment settlement failed."""
+
+    def __init__(self, reason: str, **extra: Any):
+        self.reason = reason
+        self.extra = extra
+        super().__init__(reason)
+
+
+class FacilitatorTimeoutError(Exception):
+    """Facilitator timed out."""
+
+    def __init__(self, facilitator: str = "", **extra: Any):
+        self.facilitator = facilitator
+        self.extra = extra
+        super().__init__(f"facilitator {facilitator} timed out")
+
+
 class X402Handler:
     """Handle x402 pay-per-request payments per the spec.
 
@@ -211,6 +238,43 @@ class X402Handler:
             self._record_payment(payment_record)
         return result
 
+    async def verify_payment_strict(
+        self,
+        payment_id: str,
+        tx_hash: str,
+        network: str = "",
+        asset: str = "",
+        amount_usd: float = 0.0,
+        operation: str = "",
+        caller_key: str = "",
+    ) -> dict[str, Any]:
+        """Verify a payment, raising ``VerifyError`` on failure.
+
+        Same behavior as :meth:`verify_payment` but raises a typed exception
+        instead of returning ``{"verified": False, "reason": ...}``. Callers
+        that prefer try/except can use this variant; the dict-returning
+        ``verify_payment`` is kept unchanged for backwards compatibility.
+        """
+        result = await self.verify_payment(
+            payment_id,
+            tx_hash,
+            network=network,
+            asset=asset,
+            amount_usd=amount_usd,
+            operation=operation,
+            caller_key=caller_key,
+        )
+        if not result.get("verified"):
+            raise VerifyError(
+                result.get("reason", "verification failed"),
+                payment_id=payment_id,
+                tx_hash=tx_hash,
+                network=network,
+                asset=asset,
+                operation=operation,
+            )
+        return result
+
     async def settle_payment(
         self,
         payment_id: str,
@@ -247,6 +311,41 @@ class X402Handler:
             if settlement.get("success") is True:
                 self._settled_txs.setdefault(key, settlement)
         self._record_settlement(settlement)
+        return settlement
+
+    async def settle_payment_strict(
+        self,
+        payment_id: str,
+        tx_hash: str,
+        network: str = "",
+        asset: str = "",
+        amount_usd: float = 0.0,
+        operation: str = "",
+    ) -> dict[str, Any]:
+        """Settle a payment, raising ``SettleError`` on failure.
+
+        Same behavior as :meth:`settle_payment` but raises a typed exception
+        instead of returning a dict with ``success: False``. Callers that
+        prefer try/except can use this variant; the dict-returning
+        ``settle_payment`` is kept unchanged for backwards compatibility.
+        """
+        settlement = await self.settle_payment(
+            payment_id,
+            tx_hash,
+            network=network,
+            asset=asset,
+            amount_usd=amount_usd,
+            operation=operation,
+        )
+        if settlement.get("success") is not True:
+            raise SettleError(
+                settlement.get("reason", "settlement failed"),
+                payment_id=payment_id,
+                tx_hash=tx_hash,
+                network=network,
+                asset=asset,
+                operation=operation,
+            )
         return settlement
 
     def require_payment(
