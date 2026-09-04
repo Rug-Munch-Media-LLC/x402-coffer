@@ -26,6 +26,23 @@ EIP7702_RPC: dict[str, str] = {
     n: os.getenv(f"X402_EIP7702_RPC_{n.split(':')[-1]}", url) for n, url in _EIP7702_RPC_DEFAULTS.items()
 }
 
+# EIP-7702 self-verify RPC fallbacks: network -> list of fallback JSON-RPC endpoints.
+# Tried in order after the primary RPC on transient (429/timeout) failures.
+_EIP7702_RPC_FALLBACKS: dict[str, list[str]] = {
+    "eip155:8453": [
+        "https://base-rpc.publicnode.com",
+        "https://base.drpc.org",
+    ],
+    "eip155:1": [
+        "https://ethereum-rpc.publicnode.com",
+        "https://eth.drpc.org",
+    ],
+    "eip155:42161": [
+        "https://arbitrum-rpc.publicnode.com",
+        "https://arbitrum.drpc.org",
+    ],
+}
+
 # ── EIP-7702 self-verify fallback ───────────────────────────────────────────
 
 
@@ -104,44 +121,53 @@ def _eip7702_matches(tx: dict[str, Any], network: str, asset: str, amount_usd: f
 async def _eip7702_verify(tx_hash: str, network: str, asset: str, amount_usd: float) -> dict[str, Any]:
     """Poll RPC for the tx receipt, then assert it paid OUR wallet >= price."""
     network_id = normalize_network_id(network)
-    rpc = EIP7702_RPC.get(network_id)
-    if not rpc:
+    primary = EIP7702_RPC.get(network_id)
+    if not primary:
         return {
             "verified": False,
             "reason": f"No EIP-7702 RPC for {network_id}",
             "settlement": None,
         }
-    try:
-        async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
-            receipt = await _rpc_call(client, rpc, "eth_getTransactionReceipt", [tx_hash])
-            if not receipt or receipt.get("status") != "0x1":
+    rpc_chain = [primary] + _EIP7702_RPC_FALLBACKS.get(network_id, [])
+    last_error: Exception | None = None
+    for rpc in rpc_chain:
+        try:
+            async with httpx.AsyncClient(timeout=X402_TIMEOUT_SECONDS) as client:
+                receipt = await _rpc_call(client, rpc, "eth_getTransactionReceipt", [tx_hash])
+                if not receipt or receipt.get("status") != "0x1":
+                    return {
+                        "verified": False,
+                        "reason": "EIP-7702 receipt not found or tx failed",
+                        "settlement": receipt or None,
+                        "facilitator": "eip-7702",
+                    }
+                tx = await _rpc_call(client, rpc, "eth_getTransactionByHash", [tx_hash])
+                if not tx:
+                    return {
+                        "verified": False,
+                        "reason": "EIP-7702 tx not found",
+                        "settlement": receipt,
+                        "facilitator": "eip-7702",
+                    }
+                ok, reason = _eip7702_matches(tx, network_id, asset, amount_usd)
+                if not ok:
+                    return {
+                        "verified": False,
+                        "reason": f"EIP-7702 payment mismatch: {reason}",
+                        "settlement": receipt,
+                        "facilitator": "eip-7702",
+                    }
                 return {
-                    "verified": False,
-                    "reason": "EIP-7702 receipt not found or tx failed",
-                    "settlement": receipt or None,
-                    "facilitator": "eip-7702",
-                }
-            tx = await _rpc_call(client, rpc, "eth_getTransactionByHash", [tx_hash])
-            if not tx:
-                return {
-                    "verified": False,
-                    "reason": "EIP-7702 tx not found",
+                    "verified": True,
+                    "reason": "",
                     "settlement": receipt,
                     "facilitator": "eip-7702",
                 }
-            ok, reason = _eip7702_matches(tx, network_id, asset, amount_usd)
-            if not ok:
-                return {
-                    "verified": False,
-                    "reason": f"EIP-7702 payment mismatch: {reason}",
-                    "settlement": receipt,
-                    "facilitator": "eip-7702",
-                }
-            return {
-                "verified": True,
-                "reason": "",
-                "settlement": receipt,
-                "facilitator": "eip-7702",
-            }
-    except (httpx.HTTPError, httpx.RequestError) as e:
-        return {"verified": False, "reason": f"EIP-7702 verify failed: {e}", "settlement": None}
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            last_error = e
+            continue
+    return {
+        "verified": False,
+        "reason": f"EIP-7702 verify failed: {last_error}",
+        "settlement": None,
+    }
