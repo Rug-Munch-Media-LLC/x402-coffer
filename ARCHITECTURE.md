@@ -502,6 +502,45 @@ Coffer was born from pryscraper's hardened x402 payment system. The following 26
 
 ---
 
+## Competition-Sourced Features (2026-09)
+
+Features ported from Coinbase x402-py and the JS @x402 ecosystem to achieve best-in-class.
+
+### Settle Hooks
+- Pre-settle hooks can abort settlement by returning {"abort": True, "reason": "..."}
+- Post-settle hooks receive the settlement record, never block settlement
+
+### Weighted Random Facilitator Selection
+- Facilitators selected via weighted random (health score = weight) instead of deterministic sort
+- Prevents thundering herd on the best facilitator
+- Fallback chain preserved: [selected] + [remaining healthy in priority order]
+
+### Latency-Aware Health Scoring
+- Health score = successes - failures*2 - avg_latency_seconds
+- Latency tracked per facilitator, capped at 100 samples
+
+### Exponential Backoff Retry
+- 3 attempts with 0.5 * 2^attempt delay (0.5s, 1s, 2s)
+- On httpx.HTTPError or asyncio.TimeoutError
+
+### Typed Error Hierarchy
+- VerifyError, SettleError, FacilitatorTimeoutError exception classes
+- verify_payment_strict() and settle_payment_strict() raise instead of returning dicts
+
+### Dynamic Scheme Negotiation
+- negotiate_scheme() selects best payment scheme based on client capabilities and network
+
+### Auth-Capture Scheme
+- authorize_payment() verifies without settling
+- capture_payment() settles a previously authorized payment
+- void_payment() cancels authorization without capture
+
+### Extension Mutation Policy
+- validate_scheme_extension() ensures extensions can't modify immutable fields
+- Protects scheme, network, asset, max_timeout_seconds, reserved extra keys
+
+---
+
 ## See Also
 
 - [README.md](README.md) — Product overview + quickstart
