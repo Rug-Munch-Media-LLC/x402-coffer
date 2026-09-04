@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -116,7 +117,10 @@ async def test_first_facilitator_success_short_circuits() -> None:
             _cfg("payai", "https://payai.test/verify", 2),
         ]
     )
-    with respx.mock:
+    with (
+        respx.mock,
+        patch("coffer._engine.external_verify.random.choices", return_value=[router.facilitators[0]]),
+    ):
         respx.post("https://coinbase.test/verify").mock(side_effect=_cb)
         respx.post("https://payai.test/verify").mock(
             side_effect=lambda _: (_ for _ in ()).throw(AssertionError("payai must not be called"))
