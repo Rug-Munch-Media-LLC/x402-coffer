@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -59,7 +60,7 @@ class FacilitatorRouter:
             [f for f in (facilitators or DEFAULT_FACILITATORS) if f.enabled and f.verify_url],
             key=lambda f: f.priority,
         )
-        self._failures: dict[str, int] = {}
+        self._failures: dict[str, tuple[int, float]] = {}
         self.self_hosted = X402_SELF_FACILITATE if self_hosted is None else bool(self_hosted)
         self._self_facilitator: SelfFacilitator | None = None
         self._network_facilitators: dict[str, Any] = {}
@@ -69,14 +70,28 @@ class FacilitatorRouter:
     # ── health / extension points ──────────────────────────────────────────
 
     def _is_healthy(self, config: FacilitatorConfig) -> bool:
-        return self._failures.get(config.name, 0) < 3
+        entry = self._failures.get(config.name)
+        if entry is None:
+            return True
+        count, last_failure = entry
+        if count >= 3 and time.time() - last_failure > 60:
+            return True  # half-open: allow a probe after the cooldown window
+        return count < 3
 
     def _mark_failure(self, config: FacilitatorConfig) -> None:
-        self._failures[config.name] = self._failures.get(config.name, 0) + 1
+        count, _ = self._failures.get(config.name, (0, 0.0))
+        self._failures[config.name] = (count + 1, time.time())
         log.warning("x402_facilitator_failure", extra={"facilitator": config.name})
 
     def _mark_success(self, config: FacilitatorConfig) -> None:
-        self._failures.pop(config.name, None)
+        entry = self._failures.get(config.name)
+        if entry is None:
+            return
+        count, _ = entry
+        if count <= 1:
+            self._failures.pop(config.name, None)
+        else:
+            self._failures[config.name] = (count - 1, time.time())
 
     def register_facilitator(self, network: str, impl: Any) -> None:
         """Register a custom facilitator impl for a network (e.g. TRON).
@@ -135,7 +150,7 @@ class FacilitatorRouter:
             "asset": asset,
             "amount_usd": amount_usd,
         }
-        auth = self._pending_auths.get(payment_id)
+        auth = self._pending_auths.pop(payment_id, None)
         if auth:
             payment["authorization"] = auth
         return payment
@@ -169,6 +184,10 @@ class FacilitatorRouter:
         24h TTL) and cannot be reused.
         """
         network_id = normalize_network_id(network)
+
+        # Reject unsupported networks before any dispatch to verifiers.
+        if not network_id:
+            return {"verified": False, "reason": "unsupported network", "settlement": None}
 
         # Reject invalid amounts before any network call.
         if amount_usd is None or not math.isfinite(float(amount_usd)) or amount_usd < 0:
@@ -311,6 +330,16 @@ class FacilitatorRouter:
         result["network"] = network_id
         result["payment_id"] = payment_id
         result["facilitator"] = "tron-rpc"
+        if result.get("verified"):
+            ok, reason = await self._enforce_replay(tx_hash, network_id)
+            if not ok:
+                return {
+                    "verified": False,
+                    "reason": reason,
+                    "settlement": None,
+                    "network": network_id,
+                    "http_status": REPLAY_HTTP_STATUS,
+                }
         return result
 
     def _scaffold_non_evm_verify(
