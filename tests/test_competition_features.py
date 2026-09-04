@@ -8,7 +8,11 @@ offer from weakening the baseline, and the typed ``VerifyError`` /
 
 from __future__ import annotations
 
-from coffer._engine.handler import SettleError, VerifyError
+from unittest.mock import AsyncMock
+
+import pytest
+
+from coffer._engine.handler import SettleError, VerifyError, X402Handler
 from coffer._engine.scheme import negotiate_scheme, validate_scheme_extension
 
 # --- scheme negotiation -----------------------------------------------------
@@ -74,3 +78,79 @@ def test_settle_error_class() -> None:
     """SettleError exposes the failure reason."""
     err = SettleError("test")
     assert err.reason == "test"
+
+
+# --- 6-point lifecycle hooks -------------------------------------------------
+
+
+def _handler(tmp_path, router):
+    """A handler with audit files redirected into tmp_path."""
+    h = X402Handler(router=router)
+    h.payments_file = tmp_path / "payments.jsonl"
+    h.settlements_file = tmp_path / "settlements.jsonl"
+    return h
+
+
+@pytest.mark.asyncio
+async def test_pre_verify_hook_aborts(tmp_path) -> None:
+    """A pre-verify hook returning abort=True short-circuits verification."""
+    router = AsyncMock()
+    h = _handler(tmp_path, router)
+    h.on_pre_verify(lambda **kw: {"abort": True, "reason": "blocked"})
+    res = await h.verify_payment("pid_h1", "0xtx_h1", amount_usd=1.0)
+    assert res["verified"] is False
+    assert res["reason"] == "blocked"
+    router.verify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_verify_hook_fires(tmp_path) -> None:
+    """A post-verify hook fires after a successful verification."""
+    router = AsyncMock()
+    router.verify.return_value = {"verified": True}
+    h = _handler(tmp_path, router)
+    calls: list[dict] = []
+    h.on_post_verify(calls.append)
+    res = await h.verify_payment("pid_h2", "0xtx_h2", amount_usd=1.0)
+    assert res["verified"] is True
+    assert len(calls) == 1
+    assert calls[0]["verified"] is True
+
+
+@pytest.mark.asyncio
+async def test_on_verify_failure_hook_fires(tmp_path) -> None:
+    """An on-verify-failure hook fires after a failed verification."""
+    router = AsyncMock()
+    router.verify.return_value = {"verified": False, "reason": "test"}
+    h = _handler(tmp_path, router)
+    calls: list[dict] = []
+    h.on_verify_failure(calls.append)
+    res = await h.verify_payment("pid_h3", "0xtx_h3", amount_usd=1.0)
+    assert res["verified"] is False
+    assert len(calls) == 1
+    assert calls[0]["reason"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_pre_settle_hook_aborts(tmp_path) -> None:
+    """A pre-settle hook returning abort=True short-circuits settlement."""
+    router = AsyncMock()
+    h = _handler(tmp_path, router)
+    h.on_pre_settle(lambda **kw: {"abort": True})
+    res = await h.settle_payment("pid_h4", "0xtx_h4", amount_usd=1.0)
+    assert res["success"] is False
+    router.settle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_settle_hook_fires(tmp_path) -> None:
+    """A post-settle hook fires after a successful settlement."""
+    router = AsyncMock()
+    router.settle.return_value = {"success": True}
+    h = _handler(tmp_path, router)
+    calls: list[dict] = []
+    h.on_post_settle(calls.append)
+    res = await h.settle_payment("pid_h5", "0xtx_h5", amount_usd=1.0)
+    assert res["success"] is True
+    assert len(calls) == 1
+    assert calls[0]["success"] is True
