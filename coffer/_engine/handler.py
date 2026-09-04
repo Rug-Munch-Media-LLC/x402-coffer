@@ -10,6 +10,7 @@ records with replay-hardening (expiry + caller binding).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -17,6 +18,8 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import httpx
 
 from .facilitator_config import (
     PAYMENT_VALIDITY_SECONDS,
@@ -106,6 +109,9 @@ class X402Handler:
         self._loaded = False
         self._pre_settle_hooks: list = []
         self._post_settle_hooks: list = []
+        self._pre_verify_hooks: list = []
+        self._post_verify_hooks: list = []
+        self._on_verify_failure_hooks: list = []
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
@@ -222,6 +228,24 @@ class X402Handler:
                 )
                 return {"verified": False, "reason": "pricing unavailable"}
 
+        # Pre-verify hooks run before the replay lock and before any
+        # facilitator call. A hook may abort verification by returning
+        # ``{"abort": True, "reason": "..."}``.
+        for hook in self._pre_verify_hooks:
+            hook_result = hook(
+                payment_id=payment_id,
+                tx_hash=tx_hash,
+                network=network,
+                asset=asset,
+                amount_usd=amount_usd,
+                operation=operation,
+            )
+            if isinstance(hook_result, dict) and hook_result.get("abort"):
+                return {
+                    "verified": False,
+                    "reason": hook_result.get("reason", "aborted by pre-verify hook"),
+                }
+
         result = await self.router.verify(payment_id, tx_hash, network, asset, amount_usd)
         payment_record = {
             "payment_id": payment_id,
@@ -239,6 +263,19 @@ class X402Handler:
         }
         with self._verify_lock:
             self._record_payment(payment_record)
+
+        if result.get("verified"):
+            for hook in self._post_verify_hooks:
+                try:
+                    hook(result)
+                except Exception:  # noqa: BLE001, S110 — post-verify hooks must never block
+                    pass
+        else:
+            for hook in self._on_verify_failure_hooks:
+                try:
+                    hook(result)
+                except Exception:  # noqa: BLE001, S110 — verify-failure hooks must never block
+                    pass
         return result
 
     async def verify_payment_strict(
@@ -320,7 +357,20 @@ class X402Handler:
                 if isinstance(result, dict) and result.get("abort"):
                     return {"success": False, "error": result.get("reason", "aborted by pre-settle hook")}
 
-            settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
+            settlement = None
+            for attempt in range(3):
+                try:
+                    settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
+                    break
+                except httpx.HTTPError as e:
+                    if attempt == 2:
+                        raise
+                    resp = getattr(e, "response", None)
+                    retry_after = int(resp.headers.get("Retry-After", "0")) if resp is not None else 0
+                    await asyncio.sleep(min(max(retry_after, 0.5 * 2**attempt), 30))
+            # The loop either breaks with a settlement or raises on the final
+            # attempt, so ``settlement`` is guaranteed set here.
+            assert settlement is not None
             # Only index successful settles so a failed attempt can be retried.
             if settlement.get("success") is True:
                 self._settled_txs.setdefault(key, settlement)
@@ -412,6 +462,18 @@ class X402Handler:
     def on_post_settle(self, hook):
         """Register a hook executed after successful settlement. Hook receives the settlement record."""
         self._post_settle_hooks.append(hook)
+
+    def on_pre_verify(self, hook):
+        """Register a hook executed before verification. Hook receives (payment_id, tx_hash, network, asset, amount_usd, operation). Can abort by returning {"abort": True, "reason": "..."}."""
+        self._pre_verify_hooks.append(hook)
+
+    def on_post_verify(self, hook):
+        """Register a hook executed after successful verification. Hook receives the verify result."""
+        self._post_verify_hooks.append(hook)
+
+    def on_verify_failure(self, hook):
+        """Register a hook executed when verification fails. Hook receives the verify result."""
+        self._on_verify_failure_hooks.append(hook)
 
     def require_payment(
         self,
