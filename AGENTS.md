@@ -57,15 +57,13 @@ make clean       # remove build artifacts
 ## Architecture
 See [ARCHITECTURE.md](ARCHITECTURE.md). Update it when components change.
 
-## Plan
-[PLAN.md](PLAN.md) shows current sprint. Update weekly.
+## Security Hardening
+Applied 26 hardening fixes: fail-closed pricing, operation gating, settlement idempotency, fsync, thread lock, facilitator TTL, pending_auths cleanup, network validation, TRON replay, webhook HMAC, SSRF guard, redirect disable, empty-secret refuse, dead-letter redaction, TRON contract filter, atomic compare, caller-binding, batch caller_key, rate limit degraded cap, LRU, lazy loading, EVM RPC fallback, Solana payer binding, health-score routing, store fsync, batch expiry, import fix.
 
-## Status
-[STATUS.md](STATUS.md) shows where we are RIGHT NOW. Update before each commit.
+## Quality Gates
+- 200 tests
+- ruff clean
+- pyright clean
 
-## Owners
-- Primary: crmuncher
-- Backup: TBD
-
-## Related Repos
-See [standards/PRODUCTS.md](https://git.rugmunch.io/RugMunchMedia/standards/raw/branch/main/PRODUCTS.md).
+## Parity with Pry
+Coffer was born from pryscraper's payment system, now at full parity.
