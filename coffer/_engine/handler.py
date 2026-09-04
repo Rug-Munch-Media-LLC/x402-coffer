@@ -71,7 +71,12 @@ class X402Handler:
         self._verify_lock = threading.Lock()
         # Idempotency index for settled txs: ``tx:{network}:{tx_hash}`` -> receipt.
         self._settled_txs: dict[str, dict] = {}
-        self._load_payments()
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        if not self._loaded:
+            self._load_payments()
+            self._loaded = True
 
     def _load_payments(self) -> None:
         self.payments: list[dict[str, Any]] = []
@@ -85,6 +90,7 @@ class X402Handler:
 
     def _record_payment(self, payment: dict[str, Any]) -> None:
         """Persist payment record to local JSONL audit log."""
+        self._ensure_loaded()
         try:
             with open(self.payments_file, "a") as f:
                 f.write(json.dumps(payment) + "\n")
@@ -272,6 +278,7 @@ class X402Handler:
         payment must have been purchased for that exact operation. A cheap
         payment can therefore never unlock a more expensive endpoint.
         """
+        self._ensure_loaded()
         now = datetime.now(UTC)
         for p in self.payments:
             if p.get("payment_id") != payment_id or not p.get("verified"):
@@ -295,12 +302,14 @@ class X402Handler:
         return False
 
     def get_payment(self, payment_id: str) -> dict[str, Any] | None:
+        self._ensure_loaded()
         for p in self.payments:
             if p["payment_id"] == payment_id:
                 return p
         return None
 
     def get_stats(self) -> dict[str, Any]:
+        self._ensure_loaded()
         return {
             "total_payments": len(self.payments),
             "wallet": self.wallet,
