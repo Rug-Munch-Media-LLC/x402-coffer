@@ -75,6 +75,37 @@ class RateLimiter:
         return True, 0
 
 
+class DualWindowLimiter:
+    """Per-token rate limiter with independent minute and day quotas."""
+
+    def __init__(self, per_minute: int = 60, per_day: int = 10000):
+        self._minute_windows: dict[str, list[float]] = {}
+        self._day_windows: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
+        self.per_minute = per_minute
+        self.per_day = per_day
+
+    def allow(self, token: str) -> tuple[bool, dict]:
+        """Check rate limit for a token. Returns (allowed, headers dict with remaining/reset_at)."""
+        now = time.time()
+        with self._lock:
+            minute = self._minute_windows.setdefault(token, [])
+            day = self._day_windows.setdefault(token, [])
+            minute[:] = [t for t in minute if now - t < 60]
+            day[:] = [t for t in day if now - t < 86400]
+            minute_allowed = len(minute) < self.per_minute
+            day_allowed = len(day) < self.per_day
+            if minute_allowed and day_allowed:
+                minute.append(now)
+                day.append(now)
+            return minute_allowed and day_allowed, {
+                "X-RateLimit-Remaining-Minute": max(0, self.per_minute - len(minute)),
+                "X-RateLimit-Remaining-Day": max(0, self.per_day - len(day)),
+                "X-RateLimit-Reset-Minute": str(int(now + 60)),
+                "X-RateLimit-Reset-Day": str(int(now + 86400)),
+            }
+
+
 _limiter: RateLimiter | None = None
 
 
