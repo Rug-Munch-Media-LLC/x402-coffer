@@ -541,6 +541,24 @@ Features ported from Coinbase x402-py and the JS @x402 ecosystem to achieve best
 
 ---
 
+## Batch Channels & Escrow (2026-09)
+
+### On-Chain Batch Settlement Channels
+- BatchChannel dataclass with channel_id, chain_id, depositor, cumulative_claimed, max_claims_per_batch, status
+- create_channel() generates sha256-derived 16-hex channel_id
+- claim_channel() validates cumulative_claimed + amount <= max_claims_per_batch
+- refund_channel() marks channel as "refunded", returns remaining balance
+- get_channel() retrieves channel state
+
+### Auth-Capture Escrow
+- PaymentInfo EIP-712 dataclass with payer, payee, amount, asset, network
+- Pre-approval expiry, authorization expiry, refund expiry windows
+- min_fee_bps / max_fee_bps fee bounds validation
+- capture_authorizer field for delegated capture
+- is_expired(), can_refund(), validate_fee() methods
+
+---
+
 ## See Also
 
 - [README.md](README.md) — Product overview + quickstart
