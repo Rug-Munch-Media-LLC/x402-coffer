@@ -75,7 +75,8 @@ def _env_bool(name: str, default: str) -> bool:
 
 def _check_secret_permissions() -> None:
     """Warn if secret files are world-readable."""
-    import os, stat
+    import os
+    import stat
 
     wallet_file = os.getenv("X402_WALLET_FILE", "")
     if wallet_file and os.path.exists(wallet_file):
