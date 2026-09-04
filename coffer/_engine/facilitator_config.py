@@ -3,6 +3,7 @@
 # --- facilitator_config.py: facilitator/environment configuration ---
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 from dataclasses import dataclass, field
@@ -123,7 +124,6 @@ def _env_bool(name: str, default: str) -> bool:
 
 def _check_secret_permissions() -> None:
     """Warn if secret files are world-readable."""
-    import os
     import stat
 
     wallet_file = os.getenv("X402_WALLET_FILE", "")
