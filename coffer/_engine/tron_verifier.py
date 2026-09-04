@@ -101,11 +101,12 @@ def _confirmed_at_from_timestamp(timestamp_ms: float | None) -> str:
         return ""
 
 
-def _iter_trc20_transfers(result: dict[str, Any]) -> list[dict[str, Any]]:
+def _iter_trc20_transfers(result: dict[str, Any], contract: str = TRON_USDT_CONTRACT) -> list[dict[str, Any]]:
     """Yield decoded TRC-20 Transfer events from a contract result.
 
     Each event is a dict with ``from``, ``to``, ``value``, ``topic0``.
-    Only events with the canonical Transfer topic0 are returned.
+    Only events with the canonical Transfer topic0 AND emitted by the expected
+    TRC-20 contract are returned.
     Uses topic-based decoding (same approach as EVM log decoding).
     """
     events: list[dict[str, Any]] = []
@@ -115,6 +116,11 @@ def _iter_trc20_transfers(result: dict[str, Any]) -> list[dict[str, Any]]:
 
     for entry in logs:
         if not isinstance(entry, dict):
+            continue
+        # Require the emitting contract address to match the expected TRC-20
+        # contract. Prevents accepting a Transfer event from a spoofed/impostor
+        # token contract that shares the same Transfer topic0 signature.
+        if entry.get("address", "").lower() != contract.lower():
             continue
         topics = entry.get("topics") or []
         if not isinstance(topics, list) or len(topics) < 3:
@@ -208,11 +214,11 @@ async def verify_tron_payment(
                     return _failure("transaction_unconfirmed", tx_hash=tx_hash)
 
                 # Decode TRC-20 Transfer events (topic-based).
-                events = _iter_trc20_transfers(data)
+                events = _iter_trc20_transfers(data, contract=contract)
                 if not events:
                     # Fallback: try decoding from receipt.logs if present.
                     receipt = data.get("receipt") or {}
-                    events = _iter_trc20_transfers(receipt)
+                    events = _iter_trc20_transfers(receipt, contract=contract)
 
                 if not events:
                     return _failure(
@@ -247,15 +253,18 @@ async def verify_tron_payment(
                 # Prefer the largest transfer to the expected recipient.
                 best = max(matching, key=lambda e: e["value"])
                 paid_atomic = best["value"]
-                paid_usd = paid_atomic / 1_000_000  # USDT has 6 decimals
 
-                if paid_usd + 1e-9 < amount_usd:
+                # Compare in integer atomic units (USDT has 6 decimals) to avoid
+                # float precision issues in the underpayment check.
+                required_atomic = int(round(amount_usd * 1_000_000))
+                if paid_atomic < required_atomic:
                     return _failure(
                         "insufficient_amount",
                         tx_hash=tx_hash,
                         amount_atomic=paid_atomic,
+                        required_atomic=required_atomic,
                         required_usd=amount_usd,
-                        actual_usd=paid_usd,
+                        actual_usd=paid_atomic / 1_000_000,
                         block=block_number,
                     )
 
@@ -266,7 +275,7 @@ async def verify_tron_payment(
                     recipient=recipient,
                     amount_raw=paid_atomic,
                     decimals=6,
-                    amount_usd=round(paid_usd * usdt_price_usd, 6),
+                    amount_usd=round((paid_atomic / 1_000_000) * usdt_price_usd, 6),
                     contract=contract,
                     confirmed_at=_confirmed_at_from_timestamp(timestamp),
                     block=block_number,
@@ -284,7 +293,10 @@ async def verify_tron_payment(
                 continue
             except Exception as e:  # noqa: BLE001 — never raise
                 last_error = f"unexpected error: {e}"
-                log.warning("x402_tron_verify_error", extra={"rpc": rpc, "error": str(e)})
+                log.error(
+                    "tron_verify_error",
+                    extra={"rpc": rpc, "error": str(e)[:200], "type": type(e).__name__},
+                )
                 continue
 
     return _failure(last_error, tx_hash=tx_hash)

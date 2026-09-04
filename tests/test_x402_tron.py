@@ -46,7 +46,7 @@ def _tx_info(
                     "0x000000000000000000000000" + to_hex[2:],  # to (strip 41 prefix for topic)
                 ],
                 "data": "0x" + value.to_bytes(32, "big").hex(),
-                "contract_address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+                "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
             },
         ],
     }
@@ -197,7 +197,7 @@ async def test_wrong_topic0_not_matched() -> None:
                     "0x000000000000000000000000" + MERCHANT_HEX[2:],
                 ],
                 "data": "0x00000000000000000000000000000000000000000000000000000000000f4240",
-                "contract_address": "TScamToken444444444444444444444444",
+                "address": "TScamToken444444444444444444444444",
             },
         ],
     }
