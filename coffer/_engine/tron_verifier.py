@@ -256,7 +256,7 @@ async def verify_tron_payment(
 
                 # Compare in integer atomic units (USDT has 6 decimals) to avoid
                 # float precision issues in the underpayment check.
-                required_atomic = int(round(amount_usd * 1_000_000))
+                required_atomic = round(amount_usd * 1_000_000)
                 if paid_atomic < required_atomic:
                     return _failure(
                         "insufficient_amount",

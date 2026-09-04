@@ -134,6 +134,4 @@ def is_batch_paid(batch_id: str, caller_key: str = "") -> bool:
         except ValueError:
             return False
     stored_caller = batch.get("caller_key", "")
-    if stored_caller and stored_caller != caller_key:
-        return False
-    return True
+    return not (stored_caller and stored_caller != caller_key)
