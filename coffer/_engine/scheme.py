@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Rug Munch Media LLC
 # --- scheme.py: backward-compat re-exports from coffer._engine ---
+import dataclasses
 from enum import Enum
 
 from .assets import (
@@ -109,6 +110,38 @@ def validate_scheme_extension(baseline: dict, enriched: dict, extension_key: str
     return None
 
 
+@dataclasses.dataclass
+class PaymentInfo:
+    """EIP-712 PaymentInfo for auth-capture escrow scheme."""
+
+    payer: str
+    payee: str
+    amount_usd: float
+    asset: str
+    network: str
+    pre_approval_expiry: int  # unix timestamp
+    authorization_expiry: int  # unix timestamp
+    refund_expiry: int  # unix timestamp
+    min_fee_bps: int = 0
+    max_fee_bps: int = 100  # 1%
+    capture_authorizer: str = ""
+
+    def is_expired(self, ts: int = 0) -> bool:
+        import time
+
+        now = ts or int(time.time())
+        return now > self.authorization_expiry
+
+    def can_refund(self, ts: int = 0) -> bool:
+        import time
+
+        now = ts or int(time.time())
+        return now > self.refund_expiry
+
+    def validate_fee(self, fee_bps: int) -> bool:
+        return self.min_fee_bps <= fee_bps <= self.max_fee_bps
+
+
 __all__ = [
     "CAIP2_NETWORK_IDS",
     "SCAFFOLDED_NETWORKS",
@@ -121,6 +154,7 @@ __all__ = [
     "X402Asset",
     "X402Network",
     "X402Scheme",
+    "PaymentInfo",
     "_encode_payment_required_body",
     "asset_to_atomic",
     "build_multi_asset_accepts",
