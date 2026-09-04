@@ -439,6 +439,69 @@ Secrets are resolved in priority order:
 
 ---
 
+## Security Hardening Sprint (2026-09)
+
+Coffer was born from pryscraper's hardened x402 payment system. The following 26 fixes were ported to achieve full parity and enterprise-grade security:
+
+### Payment Handler (`handler.py`)
+
+- **Fail-closed pricing** — unknown operations return `verified: False` instead of accepting at a fabricated $0.001
+- **Cross-operation gating** — `is_paid()` accepts `operation` param; payment record includes `operation` field; gate re-checks match
+- **Settlement idempotency** — `_settled_txs` dict prevents double-settle under concurrent requests
+- **Fsync durability** — `f.flush()` + `os.fsync(f.fileno())` on both payment and settlement JSONL writes
+- **Thread lock** — `_verify_lock` (class-level `threading.Lock`) serializes verify-then-record and settle sequences
+- **Lazy loading** — `_ensure_loaded()` defers file read to first access instead of every `__init__`
+
+### Facilitator Router (`facilitator_router.py`)
+
+- **TTL recovery** — circuit breaker recovers after 60s half-open probe instead of permanent death after 3 failures
+- **pending_auths cleanup** — `.pop()` one-shot consumption prevents memory leak and stale auth reuse
+- **Network validation** — unknown networks rejected before any RPC call
+- **TRON replay enforcement** — `_enforce_replay()` called after TRON verify
+- **Health-score routing** — facilitators sorted by `successes - failures*2` (ported from Coinbase competition)
+
+### Chain Verifiers
+
+- **EVM RPC fallback** — 2 fallback RPCs per network + retry on transient failures (`evm_verify.py`)
+- **Solana payer binding** — `expected_payer` param validates on-chain authority matches (`solana_verifier.py`)
+- **TRON contract-address filter** — only Transfer events from the expected TRC-20 contract accepted (`tron_verifier.py`)
+- **TRON atomic integer compare** — replaced float USD comparison with integer atomic comparison (`tron_verifier.py`)
+- **TRON error classification** — bare `except Exception` logs at error level with exception type (`tron_verifier.py`)
+
+### Store & Batch (`store.py`, `batch.py`)
+
+- **Caller-binding bypass fix** — empty `caller_key` no longer passes bound records (`store.py`)
+- **Batch caller_key binding** — `is_batch_paid()` accepts `caller_key` param and validates (`batch.py`)
+- **Batch hardcoded URL removed** — `https://pry.dev` replaced with `X402_BATCH_RESOURCE_BASE` env var (`batch.py`)
+- **Batch expiry in verify** — expired batches rejected during verify, not just during `is_batch_paid` (`batch.py`)
+
+### Webhooks (`webhooks.py`)
+
+- **Timestamp + event HMAC** — signs `timestamp.event.body` instead of body-only (prevents replay)
+- **SSRF guard** — `_validate_url()` rejects private/loopback/link-local IPs
+- **follow_redirects=False** — prevents redirect-based SSRF
+- **Empty-secret refuse** — delivery refused if webhook secret not configured (fail-closed)
+- **Dead-letter redaction** — sensitive fields (token, secret, password, api_key, authorization) redacted before persistence
+
+### Rate Limiting (`ratelimit.py`)
+
+- **Degraded cap on failover** — Redis failure degrades to `rate // 2` in-process instead of unlimited
+- **Proper LRU** — `move_to_end()` on hit ensures least-recently-used eviction (not oldest-inserted)
+
+### Import & Lint
+
+- **Import-time fix** — missing constants in `facilitator_config.py`, `resolve_price_usd` signature mismatch, `scheme.py` enum exports
+- **Ruff clean** — all lint errors resolved across the codebase
+
+### Verification
+
+- **200 tests pass**, 0 failures
+- **Ruff**: All checks passed
+- **Pyright**: 0 errors
+- **Import**: `from coffer._engine.handler import X402Handler` works cleanly
+
+---
+
 ## See Also
 
 - [README.md](README.md) — Product overview + quickstart
