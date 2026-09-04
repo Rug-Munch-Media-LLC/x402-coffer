@@ -67,6 +67,31 @@ class X402Scheme(str, Enum):
     BATCH_SETTLEMENT = "batch-settlement"
 
 
+def negotiate_scheme(client_schemes: list[str] = None, network: str = "", asset: str = "") -> str:
+    """Select best payment scheme based on client capabilities and network.
+
+    Priority: exact-match > network-native > fallback to 'exact'.
+    """
+    if not client_schemes:
+        return "exact"
+
+    # Network-native scheme preferences
+    _NATIVE = {"eip155": "exact", "solana": "exact", "tron": "exact"}
+
+    native = _NATIVE.get(network.split(":")[0], "exact") if network else "exact"
+
+    # Prefer native scheme if client supports it
+    if native in client_schemes:
+        return native
+
+    # Fall back to exact (always supported)
+    if "exact" in client_schemes:
+        return "exact"
+
+    # Use first client scheme as last resort
+    return client_schemes[0] if client_schemes else "exact"
+
+
 __all__ = [
     "CAIP2_NETWORK_IDS",
     "SCAFFOLDED_NETWORKS",
@@ -85,6 +110,7 @@ __all__ = [
     "build_payment_required",
     "flatten_supported_assets",
     "get_asset_usd_price",
+    "negotiate_scheme",
     "network_family",
     "network_verification_status",
     "normalize_network_id",
