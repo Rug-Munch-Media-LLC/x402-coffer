@@ -73,6 +73,24 @@ def _env_bool(name: str, default: str) -> bool:
     return os.getenv(name, default).lower() in ("1", "true")
 
 
+def _check_secret_permissions() -> None:
+    """Warn if secret files are world-readable."""
+    import os, stat
+
+    wallet_file = os.getenv("X402_WALLET_FILE", "")
+    if wallet_file and os.path.exists(wallet_file):
+        mode = os.stat(wallet_file).st_mode
+        if mode & stat.S_IWGRP or mode & stat.S_IWOTH:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "x402_secret_file_world_readable", extra={"file": wallet_file}
+            )
+
+
+_check_secret_permissions()
+
+
 # Default external facilitators (priority order, env-overridable).
 DEFAULT_FACILITATORS: list[FacilitatorConfig] = [
     FacilitatorConfig(

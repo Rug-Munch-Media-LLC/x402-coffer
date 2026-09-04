@@ -11,6 +11,7 @@ records with replay-hardening (expiry + caller binding).
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -46,6 +47,12 @@ from .scheme import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _extension_header(result: dict) -> str:
+    """Encode out-of-band extension data as base64 for EXTENSION-RESPONSES header."""
+    extras = {k: v for k, v in result.items() if k not in ("verified", "reason", "success")}
+    return base64.b64encode(json.dumps(extras).encode()).decode()
 
 
 class VerifyError(Exception):
@@ -247,6 +254,7 @@ class X402Handler:
                 }
 
         result = await self.router.verify(payment_id, tx_hash, network, asset, amount_usd)
+        result["extension_responses"] = _extension_header(result)
         payment_record = {
             "payment_id": payment_id,
             "tx_hash": tx_hash,
@@ -380,6 +388,7 @@ class X402Handler:
                     except Exception:  # noqa: BLE001, S110 — post-settle hooks must never block
                         pass
         self._record_settlement(settlement)
+        settlement["extension_responses"] = _extension_header(settlement)
         return settlement
 
     async def settle_payment_strict(

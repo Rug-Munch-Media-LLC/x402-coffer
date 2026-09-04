@@ -142,6 +142,35 @@ class PaymentInfo:
         return self.min_fee_bps <= fee_bps <= self.max_fee_bps
 
 
+def build_multi_payment_required(
+    operation: str,
+    resource: str,
+    networks: list[dict] | None = None,
+    amount_usd: float = 0.01,
+) -> list[dict]:
+    """Build payment requirements for multiple networks so payer can choose chain.
+
+    Each network dict: {"network": "eip155:8453", "asset": "USDC", "address": "0x..."}
+    """
+    if not networks:
+        networks = [
+            {"network": "eip155:8453", "asset": "USDC", "address": ""},
+            {"network": "solana:mainnet", "asset": "USDC", "address": ""},
+        ]
+    return [
+        {
+            "scheme": "exact",
+            "network": net["network"],
+            "asset": net["asset"],
+            "amount": str(amount_usd),
+            "payToAddress": net.get("address", ""),
+            "resource": resource,
+            "description": operation,
+        }
+        for net in networks
+    ]
+
+
 __all__ = [
     "CAIP2_NETWORK_IDS",
     "SCAFFOLDED_NETWORKS",
@@ -158,6 +187,7 @@ __all__ = [
     "_encode_payment_required_body",
     "asset_to_atomic",
     "build_multi_asset_accepts",
+    "build_multi_payment_required",
     "build_payment_required",
     "flatten_supported_assets",
     "get_asset_usd_price",
