@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import APIRouter
+
 from coffer._engine import X402_PRICING
 from coffer._engine.manifest import MCPServerManifest, MCPToolManifest
 from coffer._engine.tools_router import router as _paid_tools_router
@@ -29,9 +31,46 @@ __all__ = [
     "COFFER_SERVER",
     "MCPServerManifest",
     "MCPToolManifest",
+    "SUPPORTED_KINDS",
     "coffer_tool_manifest",
+    "ops_router",
     "tool_price_usd",
 ]
+
+#: x402 V2 spec ``kinds`` advertised by ``GET /supported`` — the
+#: (scheme, network) pairs this facilitator can settle.
+SUPPORTED_KINDS: list[dict[str, str]] = [
+    {"scheme": "exact", "network": "eip155:8453"},
+    {"scheme": "exact", "network": "solana:mainnet"},
+    {"scheme": "exact", "network": "tron:mainnet"},
+]
+
+#: Ops/probe surface (x402 V2 spec): discovery + liveness/readiness.
+ops_router = APIRouter(tags=["Ops"])
+
+
+@ops_router.get("/supported")
+async def supported() -> dict[str, Any]:
+    """x402 V2 spec: list supported (scheme, network) kinds."""
+    return {"kinds": SUPPORTED_KINDS}
+
+
+@ops_router.get("/healthz")
+async def healthz() -> dict[str, str]:
+    """Liveness probe: process is up."""
+    return {"status": "ok"}
+
+
+@ops_router.get("/readyz")
+async def readyz() -> dict[str, Any]:
+    """Readiness probe: 200 when at least one scheme kind is registered."""
+    count = len(SUPPORTED_KINDS)
+    if count < 1:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail={"status": "not ready", "kinds": 0})
+    return {"status": "ready", "kinds": count}
+
 
 #: MCP server slug for Coffer (manifest ``name`` prefix before ':').
 COFFER_SERVER = "coffer"

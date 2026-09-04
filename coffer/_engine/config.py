@@ -113,7 +113,17 @@ class X402Settings(BaseModel):
     #: Path prefixes exempt from the 402 gate (payment protocol + meta routes).
     #: ``/v1/x402`` covers ``/v1/x402/{payment,verify,settle,health}``.
     free_paths: frozenset[str] = frozenset(
-        {"/v1/x402", "/health", "/docs", "/openapi", "/version", "/dashboard"}
+        {
+            "/v1/x402",
+            "/health",
+            "/docs",
+            "/openapi",
+            "/version",
+            "/dashboard",
+            "/supported",
+            "/healthz",
+            "/readyz",
+        }
     )
 
     @classmethod
@@ -290,6 +300,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
     from coffer._engine.extensions.agent_identity import register_agents_router
 
     app.include_router(register_agents_router())
+
+    # x402 V2 spec ops surface: /supported, /healthz, /readyz.
+    from coffer.mcp import ops_router
+
+    app.include_router(ops_router)
 
     app.add_middleware(
         X402Middleware,
