@@ -8,6 +8,7 @@ offer from weakening the baseline, and the typed ``VerifyError`` /
 
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -262,3 +263,112 @@ def test_claim_after_refund_fails() -> None:
     refund_channel(channel.channel_id)
     res = claim_channel(channel.channel_id, 10)
     assert res["success"] is False
+
+
+# --- SubscriptionManager ----------------------------------------------------
+
+
+def test_subscription_lifecycle() -> None:
+    """create -> activate -> grace state machine transitions."""
+    from coffer._engine.handler import SubscriptionManager
+
+    subs = SubscriptionManager()
+    sub = subs.create("sub_1", tier="pro", monthly_cost=10.0, payee="0xpayee")
+    assert sub["state"] == "pending"
+
+    sub = subs.activate("sub_1", days=30)
+    assert sub["state"] == "active"
+    assert sub["paid_until"] > 0
+
+    # Not expired yet -> stays active.
+    sub = subs.check_grace("sub_1")
+    assert sub["state"] == "active"
+
+    # Expired but within grace -> pending with remaining grace days.
+    sub = subs.get("sub_1")
+    sub["paid_until"] = int(time.time()) - 3 * 86400
+    sub = subs.check_grace("sub_1", grace_period_days=7)
+    assert sub["state"] == "pending"
+    assert sub["grace_days"] == 4
+
+    # Past grace -> inactive (re-activate first: check_grace only runs on active subs).
+    sub["state"] = "active"
+    sub["paid_until"] = int(time.time()) - 10 * 86400
+    sub = subs.check_grace("sub_1", grace_period_days=7)
+    assert sub["state"] == "inactive"
+
+
+# --- ProductManager ---------------------------------------------------------
+
+
+def test_product_create_grant_verify() -> None:
+    """create -> grant_access -> verify_access (valid + invalid token)."""
+    from coffer._engine.handler import ProductManager
+
+    products = ProductManager()
+    created = products.create("report", amount=5.0, redirect_url="https://example.com/dl")
+    assert created["slug"] == "report"
+    assert created["amount"] == 5.0
+
+    granted = products.grant_access("report", payment_id="pid_p1")
+    assert "access_token" in granted
+    assert granted["redirect_url"] == "https://example.com/dl"
+
+    verified = products.verify_access(granted["access_token"])
+    assert verified["valid"] is True
+    assert verified["slug"] == "report"
+    assert verified["payment_id"] == "pid_p1"
+
+    invalid = products.verify_access("not-a-real-token")
+    assert invalid["valid"] is False
+    assert invalid["error"] == "invalid token"
+
+
+# --- UsageTracker -----------------------------------------------------------
+
+
+def test_usage_tracker() -> None:
+    """record() accumulates volume and averages response_ms."""
+    from coffer._engine.handler import UsageTracker
+
+    tracker = UsageTracker()
+    tracker.record("tok", amount_usd=1.0, response_ms=100)
+    tracker.record("tok", amount_usd=2.0, response_ms=200)
+    tracker.record("tok", amount_usd=3.0, response_ms=300)
+
+    stats = tracker.get_stats("tok")
+    assert stats["total_settlement_volume"] == pytest.approx(6.0)
+    assert stats["total_requests"] == 3
+    assert stats["avg_response_ms"] == 200
+
+
+# --- SignerRegistry ---------------------------------------------------------
+
+
+def test_signer_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """register -> assign -> get_signers -> resolve_key from env."""
+    from coffer._engine.facilitator_config import SignerRegistry
+
+    monkeypatch.setenv("X402_TEST_SIGNER_KEY", "abc123")
+    registry = SignerRegistry()
+    registry.register("primary", source="env", env_var="X402_TEST_SIGNER_KEY")
+    registry.assign("eip155:8453", ["primary"])
+
+    signers = registry.get_signers("eip155:8453")
+    assert len(signers) == 1
+    assert signers[0].name == "primary"
+
+    assert registry.resolve_key("primary") == "abc123"
+    assert registry.resolve_key("missing") == ""
+
+
+def test_signer_registry_file_source(tmp_path) -> None:
+    """resolve_key reads from a file source."""
+    from coffer._engine.facilitator_config import SignerRegistry
+
+    key_file = tmp_path / "signer.key"
+    key_file.write_text("file-secret-key\n")
+    registry = SignerRegistry()
+    registry.register("file_signer", source="file", file_path=str(key_file))
+
+    assert registry.resolve_key("file_signer") == "file-secret-key"
