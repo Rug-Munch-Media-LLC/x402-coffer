@@ -270,6 +270,7 @@ async def verify_solana_payment(
     expected_mint: str = SOLANA_USDC_MINT,
     commitment: str = SOLANA_RPC_COMMITMENT,
     usdc_price_usd: float = 1.0,
+    expected_payer: str = "",
 ) -> dict[str, Any]:
     """Verify a Solana SPL (USDC by default) x402 payment on-chain.
 
@@ -388,6 +389,16 @@ async def verify_solana_payment(
 
     # Prefer the largest matching transfer (one x402 payment = one transfer).
     paid_atomic, decimals, payer = max(matches, key=lambda item: item[0])
+    if expected_payer and payer and payer != expected_payer:
+        return _failure(
+            f"payer mismatch: authority {payer} != expected {expected_payer}",
+            recipient=expected_recipient,
+            mint=expected_mint,
+            confirmed_at=_confirmed_at(result),
+            slot=slot,
+            expected_payer=expected_payer,
+            actual_payer=payer,
+        )
     denom = 10**decimals if decimals >= 0 else 1
     paid_usd = paid_atomic / denom if denom else float(paid_atomic)
     required_usd = amount_usd / usdc_price_usd if usdc_price_usd > 0 else float(amount_usd)
@@ -412,4 +423,6 @@ async def verify_solana_payment(
         confirmed_at=_confirmed_at(result),
         slot=slot,
         payer=payer,
+        expected_payer=expected_payer,
+        actual_payer=payer,
     )
