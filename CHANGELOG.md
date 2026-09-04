@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Production Features (2026-09)
+- **Prometheus /metrics endpoint** — x402_verify_total, x402_settle_total, facilitator_healthy gauges
+- **GET /supported, /healthz, /readyz** — x402 V2 spec ops endpoints
+- **EXTENSION-RESPONSES header** — base64-encoded out-of-band data in verify/settle responses
+- **Secret file permission check** — warns if X402_WALLET_FILE is world-readable
+- **Dual-window per-token rate limiting** — independent minute + day quotas with X-RateLimit headers
+- **Per-token usage analytics** — settlement volume, gas cost, avg response time per API key
+- **Recurring subscriptions** — grace period state machine (active → pending → inactive)
+- **Named signers config** — per-network signer references with env/file sources, multi-key encodings
+- **Paywalled URL products** — pay → get access token → redirect with TTL
+- **Multi-network requirements array** — payer chooses which chain to pay on
+
 ### Lifecycle Hooks & Routing (2026-09)
 - **Retry-After-aware exponential backoff** — parses HTTP Retry-After header, 1s→30s cap (from JS @x402/server)
 - **6-point lifecycle hooks** — pre/post/onFailure × verify/settle with abort + recovery semantics (from JS @x402/server)
