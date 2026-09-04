@@ -99,6 +99,8 @@ class X402Handler:
         # Idempotency index for settled txs: ``tx:{network}:{tx_hash}`` -> receipt.
         self._settled_txs: dict[str, dict] = {}
         self._loaded = False
+        self._pre_settle_hooks: list = []
+        self._post_settle_hooks: list = []
 
     def _ensure_loaded(self) -> None:
         if not self._loaded:
@@ -306,10 +308,26 @@ class X402Handler:
                 logger.info("x402_settle_idempotent", extra={"settle_key": key})
                 return self._settled_txs[key]
 
+            for hook in self._pre_settle_hooks:
+                result = hook(
+                    payment_id=payment_id,
+                    tx_hash=tx_hash,
+                    network=network,
+                    asset=asset,
+                    amount_usd=amount_usd,
+                )
+                if isinstance(result, dict) and result.get("abort"):
+                    return {"success": False, "error": result.get("reason", "aborted by pre-settle hook")}
+
             settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
             # Only index successful settles so a failed attempt can be retried.
             if settlement.get("success") is True:
                 self._settled_txs.setdefault(key, settlement)
+                for hook in self._post_settle_hooks:
+                    try:
+                        hook(settlement)
+                    except Exception:  # noqa: BLE001, S110 — post-settle hooks must never block
+                        pass
         self._record_settlement(settlement)
         return settlement
 
@@ -347,6 +365,14 @@ class X402Handler:
                 operation=operation,
             )
         return settlement
+
+    def on_pre_settle(self, hook):
+        """Register a hook executed before settlement. Hook receives (payment_id, tx_hash, network, asset, amount_usd). Can abort by returning {"abort": True, "reason": "..."}."""
+        self._pre_settle_hooks.append(hook)
+
+    def on_post_settle(self, hook):
+        """Register a hook executed after successful settlement. Hook receives the settlement record."""
+        self._post_settle_hooks.append(hook)
 
     def require_payment(
         self,
