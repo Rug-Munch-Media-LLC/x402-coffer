@@ -29,9 +29,9 @@ from coffer._engine.tools_router import router as _paid_tools_router
 __all__ = [
     "COFFER_AUTH_SCOPE",
     "COFFER_SERVER",
+    "SUPPORTED_KINDS",
     "MCPServerManifest",
     "MCPToolManifest",
-    "SUPPORTED_KINDS",
     "coffer_tool_manifest",
     "ops_router",
     "tool_price_usd",
