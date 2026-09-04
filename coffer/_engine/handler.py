@@ -173,7 +173,7 @@ class X402Handler:
         network = network or X402_DEFAULT_NETWORK
         asset = asset or X402_DEFAULT_ASSET
         if operation:
-            amount_usd = resolve_price_usd(operation)
+            amount_usd = resolve_price_usd(operation, network, asset)
         if amount_usd <= 0:
             # Fail closed: never default to a hardcoded $0.001 price. If no
             # server-authoritative price is resolvable (operation unknown),
@@ -221,7 +221,7 @@ class X402Handler:
         network = network or X402_DEFAULT_NETWORK
         asset = asset or X402_DEFAULT_ASSET
         if operation:
-            amount_usd = resolve_price_usd(operation)
+            amount_usd = resolve_price_usd(operation, network, asset)
         if amount_usd <= 0:
             amount_usd = X402_PRICING.get(payment_id, {}).get("price_usd", 0.001)
 

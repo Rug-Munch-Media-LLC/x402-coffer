@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import pathlib
 from dataclasses import dataclass, field
 
 
@@ -38,6 +39,21 @@ X402_SELF_FACILITATE = os.getenv("X402_SELF_FACILITATE", "1").lower() in ("1", "
 X402_SELF_FACILITATOR_KEY = os.getenv("X402_SELF_FACILITATOR_KEY", "")
 X402_SELF_FACILITATOR_RPC = os.getenv("X402_SELF_FACILITATOR_RPC", "")
 X402_OFFLINE_MODE = os.getenv("X402_OFFLINE_MODE", "0").lower() in ("1", "true")
+
+# TTL for verified payment ids (mirrors x402-py ``PAYMENT_VALIDITY_SECONDS``).
+PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "300"))
+
+# Default asset/network for payments when none is supplied by the caller.
+X402_DEFAULT_ASSET: str = os.getenv("X402_DEFAULT_ASSET", "usdc")
+X402_DEFAULT_NETWORK: str = os.getenv("X402_DEFAULT_NETWORK", "base")
+
+# Data directory for payment/settlement record persistence. Override with
+# X402_DATA_DIR; defaults to ~/.x402 so the package works out of the box.
+X402_DIR: pathlib.Path = pathlib.Path(os.getenv("X402_DATA_DIR", str(pathlib.Path.home() / ".x402")))
+X402_DIR.mkdir(parents=True, exist_ok=True)
+
+# Default facilitator URL (empty = use the configured facilitator router).
+X402_FACILITATOR_URL: str = os.getenv("X402_FACILITATOR_URL", "")
 
 
 @dataclass
