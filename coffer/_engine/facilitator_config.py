@@ -56,6 +56,54 @@ X402_DIR.mkdir(parents=True, exist_ok=True)
 X402_FACILITATOR_URL: str = os.getenv("X402_FACILITATOR_URL", "")
 
 
+@dataclasses.dataclass
+class NamedSigner:
+    name: str
+    source: str  # "env" or "file"
+    env_var: str = ""
+    file_path: str = ""
+    encoding: str = "hex"  # hex, base58, utf8, base64
+
+
+class SignerRegistry:
+    """Named signer registry with per-network references."""
+
+    def __init__(self) -> None:
+        self._signers: dict[str, NamedSigner] = {}
+        self._network_signers: dict[str, list[str]] = {}
+
+    def register(
+        self,
+        name: str,
+        source: str = "env",
+        env_var: str = "",
+        file_path: str = "",
+        encoding: str = "hex",
+    ) -> None:
+        self._signers[name] = NamedSigner(name, source, env_var, file_path, encoding)
+
+    def assign(self, network: str, signer_names: list[str]) -> None:
+        self._network_signers[network] = signer_names
+
+    def get_signers(self, network: str) -> list[NamedSigner]:
+        names = self._network_signers.get(network, [])
+        return [self._signers[n] for n in names if n in self._signers]
+
+    def resolve_key(self, name: str) -> str:
+        s = self._signers.get(name)
+        if not s:
+            return ""
+        if s.source == "env":
+            return os.getenv(s.env_var, "")
+        elif s.source == "file" and s.file_path:
+            try:
+                with open(s.file_path) as f:
+                    return f.read().strip()
+            except OSError:
+                return ""
+        return ""
+
+
 @dataclass
 class FacilitatorConfig:
     """Configuration for a single x402 facilitator."""
