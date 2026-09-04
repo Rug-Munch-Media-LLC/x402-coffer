@@ -45,11 +45,34 @@ class RateLimiter:
                 retry_after = max(1, int(dq[0] + self.window - ts) + 1)
                 return False, retry_after
             dq.append(ts)
+            self._hits.move_to_end(caller)
         return True, 0
 
     def reset(self, caller: str) -> None:
         with self._lock:
             self._hits.pop(caller, None)
+
+    def _degraded_check(self, caller: str, per_minute: int) -> tuple[bool, int]:
+        """In-process fallback when the sliding-window limiter fails.
+
+        Degrades to half-rate with a simple fixed counter instead of
+        failing open with no cap at all.
+        """
+        limit = max(1, per_minute // 2)
+        ts = time.monotonic()
+        with self._lock:
+            dq = self._hits.get(caller)
+            if dq is None:
+                dq = deque()
+                self._hits[caller] = dq
+            while dq and dq[0] <= ts - self.window:
+                dq.popleft()
+            if len(dq) >= limit:
+                retry_after = max(1, int(dq[0] + self.window - ts) + 1)
+                return False, retry_after
+            dq.append(ts)
+            self._hits.move_to_end(caller)
+        return True, 0
 
 
 _limiter: RateLimiter | None = None
@@ -78,4 +101,12 @@ def check_rate(caller: str) -> tuple[bool, int]:
             return True, 0
         return limiter.allow(caller)
     except Exception:  # noqa: BLE001 — never break payments over rate limiting
-        return True, 0
+        per_min = 0
+        try:
+            raw = os.getenv("X402_RATE_LIMIT_PER_MIN", "").strip()
+            per_min = int(raw) if raw else 0
+        except ValueError:
+            per_min = 0
+        if per_min <= 0:
+            return True, 0
+        return RateLimiter(per_min)._degraded_check(caller, per_min)
