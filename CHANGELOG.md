@@ -56,3 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - health-score routing
 
 ## [Unreleased]
+
+### Lifecycle Hooks & Routing (2026-09)
+- **Retry-After-aware exponential backoff** — parses HTTP Retry-After header, 1s→30s cap (from JS @x402/server)
+- **6-point lifecycle hooks** — pre/post/onFailure × verify/settle with abort + recovery semantics (from JS @x402/server)
+- **register_facilitator plugin point** — register custom facilitator implementations per-network (from Coinbase x402-py)
+- **Pre-existing mypy/ruff errors fixed** — handler.py, batch.py, scheme.py import fixes
+- **Extension mutation policy tests** — validate_scheme_extension test coverage
+- **Auth-capture tests** — authorize/capture/void flow test coverage
+- **Typed error tests** — VerifyError, SettleError, FacilitatorTimeoutError test coverage
