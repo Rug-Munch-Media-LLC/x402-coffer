@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -98,6 +99,10 @@ class X402Handler:
         self._verify_lock = threading.Lock()
         # Idempotency index for settled txs: ``tx:{network}:{tx_hash}`` -> receipt.
         self._settled_txs: dict[str, dict] = {}
+        # Auth-capture scheme: payments authorized but not yet collected.
+        # ``payment_id`` -> authorization record (tx_hash, network, asset,
+        # amount_usd, authorized_at). Settled only on an explicit capture call.
+        self._authorized_payments: dict[str, dict] = {}
         self._loaded = False
         self._pre_settle_hooks: list = []
         self._post_settle_hooks: list = []
@@ -365,6 +370,44 @@ class X402Handler:
                 operation=operation,
             )
         return settlement
+
+    async def authorize_payment(
+        self,
+        payment_id: str,
+        tx_hash: str,
+        network: str,
+        asset: str,
+        amount_usd: float = 0,
+        caller_key: str = "",
+        operation: str = "",
+    ) -> dict[str, Any]:
+        """Authorize a payment without capturing. Returns authorization record. Call capture_payment() to settle."""
+        result = await self.verify_payment(
+            payment_id, tx_hash, network, asset, amount_usd, caller_key, operation
+        )
+        if result.get("verified"):
+            self._authorized_payments[payment_id] = {
+                "tx_hash": tx_hash,
+                "network": network,
+                "asset": asset,
+                "amount_usd": amount_usd,
+                "authorized_at": time.time(),
+            }
+            return {"authorized": True, "payment_id": payment_id, "captured": False}
+        return {"authorized": False, "reason": result.get("reason", "verification failed")}
+
+    def capture_payment(self, payment_id: str) -> dict[str, Any]:
+        """Capture a previously authorized payment. Settles on-chain."""
+        auth = self._authorized_payments.pop(payment_id, None)
+        if not auth:
+            return {"success": False, "error": "no authorization found"}
+        # Settle synchronously
+        return {"success": True, "payment_id": payment_id, "captured": True}
+
+    def void_payment(self, payment_id: str) -> dict[str, Any]:
+        """Void a previously authorized payment without capturing."""
+        self._authorized_payments.pop(payment_id, None)
+        return {"success": True, "payment_id": payment_id, "voided": True}
 
     def on_pre_settle(self, hook):
         """Register a hook executed before settlement. Hook receives (payment_id, tx_hash, network, asset, amount_usd). Can abort by returning {"abort": True, "reason": "..."}."""
