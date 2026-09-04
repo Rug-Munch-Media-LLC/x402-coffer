@@ -12,8 +12,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from coffer._engine.batch import (
+    claim_channel,
+    create_channel,
+    get_channel,
+    refund_channel,
+)
 from coffer._engine.handler import SettleError, VerifyError, X402Handler
-from coffer._engine.scheme import negotiate_scheme, validate_scheme_extension
+from coffer._engine.scheme import PaymentInfo, negotiate_scheme, validate_scheme_extension
 
 # --- scheme negotiation -----------------------------------------------------
 
@@ -154,3 +160,105 @@ async def test_post_settle_hook_fires(tmp_path) -> None:
     assert res["success"] is True
     assert len(calls) == 1
     assert calls[0]["success"] is True
+
+
+# --- PaymentInfo escrow expiry + fee validation ------------------------------
+
+
+def _payment_info(**overrides) -> PaymentInfo:
+    """A PaymentInfo with sensible defaults, overridable per test."""
+    defaults = {
+        "payer": "0xpayer",
+        "payee": "0xpayee",
+        "amount_usd": 10.0,
+        "asset": "USDC",
+        "network": "eip155:8453",
+        "pre_approval_expiry": 1000,
+        "authorization_expiry": 1000,
+        "refund_expiry": 1000,
+    }
+    defaults.update(overrides)
+    return PaymentInfo(**defaults)
+
+
+def test_payment_info_not_expired() -> None:
+    """Authorization expiry in the future -> not expired."""
+    info = _payment_info(authorization_expiry=200)
+    assert info.is_expired(100) is False
+
+
+def test_payment_info_expired() -> None:
+    """Authorization expiry in the past -> expired."""
+    info = _payment_info(authorization_expiry=50)
+    assert info.is_expired(100) is True
+
+
+def test_payment_info_can_refund() -> None:
+    """Refund expiry in the past -> refundable."""
+    info = _payment_info(refund_expiry=50)
+    assert info.can_refund(100) is True
+
+
+def test_payment_info_cannot_refund() -> None:
+    """Refund expiry in the future -> not yet refundable."""
+    info = _payment_info(refund_expiry=200)
+    assert info.can_refund(100) is False
+
+
+def test_payment_info_validate_fee_ok() -> None:
+    """Fee within [min_fee_bps, max_fee_bps] -> valid."""
+    info = _payment_info(min_fee_bps=0, max_fee_bps=100)
+    assert info.validate_fee(50) is True
+
+
+def test_payment_info_validate_fee_out_of_bounds() -> None:
+    """Fee above max_fee_bps -> invalid."""
+    info = _payment_info(min_fee_bps=0, max_fee_bps=100)
+    assert info.validate_fee(150) is False
+
+
+# --- BatchChannel -----------------------------------------------------------
+
+
+def test_create_channel() -> None:
+    """create_channel opens a channel with a 16-char id and 'open' status."""
+    channel = create_channel("eip155:8453", "0x1234")
+    assert len(channel.channel_id) == 16
+    assert channel.status == "open"
+    assert get_channel(channel.channel_id) is channel
+
+
+def test_claim_channel_success() -> None:
+    """Claiming 50 from a fresh channel succeeds with 50 remaining."""
+    channel = create_channel("eip155:8453", "0x1234")
+    res = claim_channel(channel.channel_id, 50)
+    assert res["success"] is True
+    assert res["remaining"] == 50
+
+
+def test_claim_channel_overflow() -> None:
+    """Claiming more than max_claims_per_batch fails."""
+    channel = create_channel("eip155:8453", "0x1234")
+    res = claim_channel(channel.channel_id, 150)
+    assert res["success"] is False
+    assert res["max_claims_per_batch"] == 100
+
+
+def test_refund_channel() -> None:
+    """Refunding after a 30 claim returns 70 and marks the channel refunded."""
+    channel = create_channel("eip155:8453", "0x1234")
+    claim_channel(channel.channel_id, 30)
+    res = refund_channel(channel.channel_id)
+    assert res["success"] is True
+    assert res["refunded"] == 70
+    stored = get_channel(channel.channel_id)
+    assert stored is not None
+    assert stored.status == "refunded"
+
+
+def test_claim_after_refund_fails() -> None:
+    """Claiming a refunded channel fails."""
+    channel = create_channel("eip155:8453", "0x1234")
+    refund_channel(channel.channel_id)
+    res = claim_channel(channel.channel_id, 10)
+    assert res["success"] is False
