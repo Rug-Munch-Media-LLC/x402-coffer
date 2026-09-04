@@ -68,6 +68,7 @@ class FacilitatorRouter:
         self.self_hosted = X402_SELF_FACILITATE if self_hosted is None else bool(self_hosted)
         self._self_facilitator: SelfFacilitator | None = None
         self._network_facilitators: dict[str, Any] = {}
+        self._custom_facilitators: dict[str, Any] = {}
         self._pending_auths: dict[str, dict[str, Any]] = {}
         self.replay = ReplayStore()
 
@@ -111,11 +112,10 @@ class FacilitatorRouter:
             self._failures[config.name] = (count - 1, time.time())
 
     def register_facilitator(self, network: str, impl: Any) -> None:
-        """Register a custom facilitator impl for a network (e.g. TRON).
-
-        ``impl`` must expose ``async verify(payment) -> VerifyResult`` and
-        ``async settle(payment) -> str | None``.
+        """Register a custom facilitator implementation for a specific network.
+        The impl must have async verify(payment_id, tx_hash, network, asset, amount_usd) and async settle(...) methods.
         """
+        self._custom_facilitators[network] = impl
         network_id = normalize_network_id(network)
         self._network_facilitators[network_id] = impl
         if ":" not in network:
@@ -201,6 +201,10 @@ class FacilitatorRouter:
         24h TTL) and cannot be reused.
         """
         network_id = normalize_network_id(network)
+
+        custom = self._custom_facilitators.get(network_id)
+        if custom:
+            return await custom.verify(payment_id, tx_hash, network, asset, amount_usd)
 
         # Reject unsupported networks before any dispatch to verifiers.
         if not network_id:
