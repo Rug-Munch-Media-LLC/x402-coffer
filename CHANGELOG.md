@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Security Hardening Sprint
+### Competition-Sourced Features (2026-09)
+- **Pre-settle + post-settle hooks** — register callbacks before/after settlement (from JS @x402/server)
+- **Weighted random facilitator selection** — prevents thundering herd on best facilitator (from Coinbase x402-py)
+- **Latency-aware health scoring** — health score factors average response time (from Coinbase x402-py)
+- **Exponential backoff retry** — 3 attempts with 0.5*2^attempt delay on transient failures (from Coinbase x402-py)
+- **Typed error hierarchy** — VerifyError, SettleError, FacilitatorTimeoutError with strict variants (from JS @x402/server)
+- **Dynamic payment scheme negotiation** — select best scheme based on client capabilities (from Coinbase x402-py)
+- **Auth-capture scheme** — authorize/capture/void flow for rental/subscription models (from JS @x402/server)
+- **Extension mutation policy** — validate scheme extensions can't weaken security (from JS @x402/server)
+- **EVM RPC fallback chain** — 2 fallback RPCs per network + retry (from Coinbase x402-py)
+- **Solana payer binding** — validate on-chain authority matches expected payer (from pry parity)
+- **Health-score-based routing** — facilitators sorted by successes - failures*2 (from Coinbase x402-py)
+
+
 
 *Note: Coffer was born from pryscraper's payment system.*
 
