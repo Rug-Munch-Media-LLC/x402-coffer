@@ -48,6 +48,12 @@ class FacilitatorHealth:
         count, _ = self._failures.get(config.name, (0, 0.0))
         self._failures[config.name] = (count + 1, time.time())
         log.warning("x402_facilitator_failure", extra={"facilitator": config.name})
+        try:
+            from .observability import set_facilitator_health
+
+            set_facilitator_health(config.name, self.is_healthy(config))
+        except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+            pass
 
     def mark_success(self, config: FacilitatorConfig, start_time: float | None = None) -> None:
         self._successes[config.name] = self._successes.get(config.name, 0) + 1
@@ -56,6 +62,12 @@ class FacilitatorHealth:
             latencies.append(time.time() - start_time)
             if len(latencies) > LATENCY_WINDOW:
                 del latencies[: len(latencies) - LATENCY_WINDOW]
+        try:
+            from .observability import set_facilitator_health
+
+            set_facilitator_health(config.name, True)
+        except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+            pass
         entry = self._failures.get(config.name)
         if entry is None:
             return

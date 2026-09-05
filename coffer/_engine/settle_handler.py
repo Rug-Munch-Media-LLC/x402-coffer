@@ -91,6 +91,7 @@ class SettleMixin:
                     return {"success": False, "error": result.get("reason", "aborted by pre-settle hook")}
 
             settlement = None
+            _settle_started = asyncio.get_event_loop().time()
             for attempt in range(3):
                 try:
                     settlement = await self.router.settle(payment_id, tx_hash, network, asset, amount_usd)
@@ -104,6 +105,19 @@ class SettleMixin:
             # The loop either breaks with a settlement or raises on the final
             # attempt, so ``settlement`` is guaranteed set here.
             assert settlement is not None
+            # Prometheus metrics (fail-safe, never breaks the payment flow).
+            try:
+                from .observability import record_rpc_latency, record_settle
+
+                record_rpc_latency(network, "settle", asyncio.get_event_loop().time() - _settle_started)
+                record_settle(
+                    network,
+                    bool(settlement.get("success")),
+                    amount_usd=float(amount_usd or 0.0),
+                    asset=asset,
+                )
+            except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+                pass
             # Only index successful settles so a failed attempt can be retried.
             if settlement.get("success") is True:
                 self._settled_txs.setdefault(key, settlement)

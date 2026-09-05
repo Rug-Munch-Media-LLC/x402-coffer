@@ -60,6 +60,14 @@ async def verify(
     """
     network_id = normalize_network_id(network)
 
+    # Chain activity gauge (fail-safe): 1 = supported network attempted.
+    try:
+        from .observability import set_chain_active
+
+        set_chain_active(network_id, bool(network_id))
+    except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+        pass
+
     custom = router._custom_facilitators.get(network_id)
     if custom:
         return await custom.verify(payment_id, tx_hash, network, asset, amount_usd)

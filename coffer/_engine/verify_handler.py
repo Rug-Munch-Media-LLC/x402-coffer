@@ -111,8 +111,30 @@ class VerifyMixin:
                     "reason": hook_result.get("reason", "aborted by pre-verify hook"),
                 }
 
+        _verify_started = time.time()
         result = await self.router.verify(payment_id, tx_hash, network, asset, amount_usd)
         result["extension_responses"] = _extension_header(result)
+        # Prometheus metrics (fail-safe, never breaks the payment flow).
+        try:
+            from .observability import (
+                record_operation_call,
+                record_replay,
+                record_rpc_latency,
+                record_verify_failure,
+                record_verify_success,
+            )
+
+            record_rpc_latency(network, "verify", time.time() - _verify_started)
+            if result.get("verified"):
+                record_verify_success(network)
+            else:
+                record_verify_failure(network, str(result.get("reason", "")))
+            if "replay" in str(result.get("reason", "")).lower():
+                record_replay(network)
+            if operation:
+                record_operation_call(operation)
+        except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+            pass
         payment_record = {
             "payment_id": payment_id,
             "tx_hash": tx_hash,

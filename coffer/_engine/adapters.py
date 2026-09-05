@@ -124,6 +124,12 @@ class X402Middleware:
         body = payment_required_body(resource=full_url)
         response_headers = payment_required_headers(body)
         log.debug("x402_payment_required", extra={"path": path, "caller": caller_key})
+        try:
+            from .observability import record_challenge
+
+            record_challenge(path, "")
+        except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+            pass
         await send(
             {
                 "type": "http.response.start",
@@ -164,6 +170,12 @@ def require_payment(
                 return True
             body = payment_required_body()
             log.debug("x402_payment_required", extra={"handler": getattr(fn, "__name__", "")})
+            try:
+                from .observability import record_challenge
+
+                record_challenge(getattr(fn, "__name__", ""), "")
+            except Exception:  # noqa: BLE001, S110 — observability never breaks payments
+                pass
             return JSONResponse(status_code=402, content=body, headers=payment_required_headers(body))
 
         if inspect.iscoroutinefunction(fn):
