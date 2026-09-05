@@ -43,6 +43,7 @@ from .pricing import (
     validate_client_amount,
 )
 from .replay import REPLAY_HTTP_STATUS, ReplayStore
+from .replay_redis import RedisReplayStore, create_replay_store
 from .self_facilitator import SelfFacilitator
 
 __all__ = [
@@ -54,10 +55,12 @@ __all__ = [
     "X402_WALLET",
     "FacilitatorConfig",
     "FacilitatorRouter",
+    "RedisReplayStore",
     "ReplayStore",
     "SelfFacilitator",
     "VerifyResult",
     "asset_to_atomic",
+    "create_replay_store",
     "get_facilitator_router",
     "normalize_network_id",
     "register_facilitator",

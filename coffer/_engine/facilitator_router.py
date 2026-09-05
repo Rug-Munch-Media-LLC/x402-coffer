@@ -36,7 +36,8 @@ from .pricing import (
     normalize_network_id,
     resolve_asset_entry,
 )
-from .replay import REPLAY_HTTP_STATUS, ReplayStore
+from .replay import REPLAY_HTTP_STATUS
+from .replay_redis import create_replay_store
 from .self_facilitator import SelfFacilitator
 from .tron_verifier import verify_tron_payment
 
@@ -70,7 +71,9 @@ class FacilitatorRouter:
         self._network_facilitators: dict[str, Any] = {}
         self._custom_facilitators: dict[str, Any] = {}
         self._pending_auths: dict[str, dict[str, Any]] = {}
-        self.replay = ReplayStore()
+        # Redis-backed when X402_REDIS_URL is set (multi-instance safe);
+        # in-memory otherwise (single instance).
+        self.replay = create_replay_store()
 
     # ── health / extension points ──────────────────────────────────────────
 

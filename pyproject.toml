@@ -43,6 +43,7 @@ dev = [
   "respx>=0.21.0",
   "eth-account>=0.13.7",
   "redis>=8.0.0",
+  "fakeredis>=2.20.0",
   "fastmcp>=3.4.5",
 ]
 
