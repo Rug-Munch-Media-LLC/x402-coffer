@@ -1,0 +1,221 @@
+{
+	"title": "Coffer Payments — Detailed",
+	"schemaVersion": 39,
+	"version": 1,
+	"uid": "coffer-payments",
+	"tags": ["x402", "coffer", "payments"],
+	"time": { "from": "now-6h", "to": "now" },
+	"refresh": "30s",
+	"panels": [
+		{
+			"id": 1,
+			"type": "stat",
+			"title": "Payment Volume (verifications/min)",
+			"gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+			"targets": [
+				{ "expr": "sum(rate(coffer_verifications_total[1m]))", "refId": "A" }
+			],
+			"fieldConfig": { "defaults": { "unit": "reqps" } }
+		},
+		{
+			"id": 2,
+			"type": "stat",
+			"title": "Verification Success Rate",
+			"gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"verified\"}[5m])) / sum(rate(coffer_verifications_total[5m])) * 100",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percent",
+					"thresholds": {
+						"steps": [
+							{ "color": "red", "value": null },
+							{ "color": "yellow", "value": 80 },
+							{ "color": "green", "value": 95 }
+						]
+					}
+				}
+			}
+		},
+		{
+			"id": 3,
+			"type": "stat",
+			"title": "Settlement Success Rate",
+			"gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_settlements_total{outcome=\"success\"}[5m])) / sum(rate(coffer_settlements_total[5m])) * 100",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percent",
+					"thresholds": {
+						"steps": [
+							{ "color": "red", "value": null },
+							{ "color": "yellow", "value": 80 },
+							{ "color": "green", "value": 95 }
+						]
+					}
+				}
+			}
+		},
+		{
+			"id": 4,
+			"type": "stat",
+			"title": "Replay Attacks Detected (1h)",
+			"gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+			"targets": [
+				{ "expr": "increase(coffer_replay_detected_total[1h])", "refId": "A" }
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short",
+					"thresholds": {
+						"steps": [
+							{ "color": "green", "value": null },
+							{ "color": "red", "value": 1 }
+						]
+					}
+				}
+			}
+		},
+		{
+			"id": 5,
+			"type": "timeseries",
+			"title": "Payment Volume (verifications/min)",
+			"gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total[1m])) * 60",
+					"legendFormat": "verifications/min",
+					"refId": "A"
+				}
+			]
+		},
+		{
+			"id": 6,
+			"type": "timeseries",
+			"title": "Verification Success vs Failure",
+			"gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"verified\"}[1m])) * 60",
+					"legendFormat": "verified/min",
+					"refId": "A"
+				},
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"rejected\"}[1m])) * 60",
+					"legendFormat": "rejected/min",
+					"refId": "B"
+				}
+			]
+		},
+		{
+			"id": 7,
+			"type": "timeseries",
+			"title": "Settlement Success vs Failure",
+			"gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_settlements_total{outcome=\"success\"}[1m])) * 60",
+					"legendFormat": "success/min",
+					"refId": "A"
+				},
+				{
+					"expr": "sum(rate(coffer_settlements_total{outcome=\"failed\"}[1m])) * 60",
+					"legendFormat": "failed/min",
+					"refId": "B"
+				}
+			]
+		},
+		{
+			"id": 8,
+			"type": "timeseries",
+			"title": "RPC Latency (p50, p95, p99)",
+			"gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+			"targets": [
+				{
+					"expr": "histogram_quantile(0.50, sum(rate(coffer_rpc_latency_seconds_bucket[5m])) by (le))",
+					"legendFormat": "p50",
+					"refId": "A"
+				},
+				{
+					"expr": "histogram_quantile(0.95, sum(rate(coffer_rpc_latency_seconds_bucket[5m])) by (le))",
+					"legendFormat": "p95",
+					"refId": "B"
+				},
+				{
+					"expr": "histogram_quantile(0.99, sum(rate(coffer_rpc_latency_seconds_bucket[5m])) by (le))",
+					"legendFormat": "p99",
+					"refId": "C"
+				}
+			],
+			"fieldConfig": { "defaults": { "unit": "s" } }
+		},
+		{
+			"id": 9,
+			"type": "timeseries",
+			"title": "Revenue (settled amount, USD/hour)",
+			"gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+			"targets": [
+				{
+					"expr": "increase(coffer_settled_amount_atomic_total[1h])",
+					"legendFormat": "settled/hour",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": { "defaults": { "unit": "short" } }
+		},
+		{
+			"id": 10,
+			"type": "timeseries",
+			"title": "Replay Attacks Over Time",
+			"gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+			"targets": [
+				{
+					"expr": "increase(coffer_replay_detected_total[5m])",
+					"legendFormat": "replays/5m",
+					"refId": "A"
+				}
+			]
+		},
+		{
+			"id": 11,
+			"type": "table",
+			"title": "Facilitator Health",
+			"gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+			"targets": [
+				{
+					"expr": "coffer_facilitator_health",
+					"format": "table",
+					"instant": true,
+					"refId": "A"
+				}
+			]
+		},
+		{
+			"id": 12,
+			"type": "timeseries",
+			"title": "Payment Flow: Verify → Settle",
+			"gridPos": { "h": 8, "w": 24, "x": 0, "y": 38 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total[5m])) * 300",
+					"legendFormat": "verified",
+					"refId": "A"
+				},
+				{
+					"expr": "sum(rate(coffer_settlements_total[5m])) * 300",
+					"legendFormat": "settled",
+					"refId": "B"
+				}
+			]
+		}
+	]
+}

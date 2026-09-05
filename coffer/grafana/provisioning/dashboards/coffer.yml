@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Rug Munch Media LLC
+# Part of Coffer — https://git.rugmunch.io/RugMunchMedia/x402-coffer
+# Licensed under MIT. See LICENSE.
+
+apiVersion: 1
+
+providers:
+  - name: 'Coffer Dashboards'
+    orgId: 1
+    folder: 'Coffer'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

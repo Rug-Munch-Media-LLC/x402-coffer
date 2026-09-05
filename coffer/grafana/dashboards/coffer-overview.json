@@ -1,0 +1,141 @@
+{
+	"title": "Coffer Overview — Revenue & Health",
+	"schemaVersion": 39,
+	"version": 1,
+	"uid": "coffer-overview",
+	"tags": ["x402", "coffer", "payments", "overview"],
+	"time": { "from": "now-24h", "to": "now" },
+	"refresh": "1m",
+	"panels": [
+		{
+			"id": 1,
+			"type": "stat",
+			"title": "Revenue Today (settled amount)",
+			"gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+			"targets": [
+				{
+					"expr": "increase(coffer_settled_amount_atomic_total[24h])",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "short",
+					"color": { "mode": "thresholds" },
+					"thresholds": {
+						"steps": [
+							{ "color": "red", "value": null },
+							{ "color": "yellow", "value": 1 },
+							{ "color": "green", "value": 10 }
+						]
+					}
+				}
+			}
+		},
+		{
+			"id": 2,
+			"type": "stat",
+			"title": "Revenue This Week (settled amount)",
+			"gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+			"targets": [
+				{
+					"expr": "increase(coffer_settled_amount_atomic_total[7d])",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": { "defaults": { "unit": "short" } }
+		},
+		{
+			"id": 3,
+			"type": "stat",
+			"title": "Payment Success Rate (24h)",
+			"gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"verified\"}[24h])) / sum(rate(coffer_verifications_total[24h])) * 100",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": {
+				"defaults": {
+					"unit": "percent",
+					"thresholds": {
+						"steps": [
+							{ "color": "red", "value": null },
+							{ "color": "yellow", "value": 80 },
+							{ "color": "green", "value": 95 }
+						]
+					}
+				}
+			}
+		},
+		{
+			"id": 4,
+			"type": "stat",
+			"title": "Active Chains",
+			"gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+			"targets": [{ "expr": "count(coffer_chain_active == 1)", "refId": "A" }],
+			"fieldConfig": { "defaults": { "unit": "short" } }
+		},
+		{
+			"id": 5,
+			"type": "timeseries",
+			"title": "Revenue (settled amount/hour)",
+			"gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+			"targets": [
+				{
+					"expr": "increase(coffer_settled_amount_atomic_total[1h])",
+					"legendFormat": "settled/hour",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": { "defaults": { "unit": "short" } }
+		},
+		{
+			"id": 6,
+			"type": "timeseries",
+			"title": "Error Rate by Network",
+			"gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"rejected\"}[5m])) by (network)",
+					"legendFormat": "{{network}}",
+					"refId": "A"
+				},
+				{
+					"expr": "sum(rate(coffer_settlements_total{outcome=\"failed\"}[5m])) by (network)",
+					"legendFormat": "{{network}} (settle)",
+					"refId": "B"
+				}
+			]
+		},
+		{
+			"id": 7,
+			"type": "table",
+			"title": "Top Networks by Settlement Volume",
+			"gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+			"targets": [
+				{
+					"expr": "topk(10, sum(increase(coffer_settlements_total{outcome=\"success\"}[1h])) by (network))",
+					"format": "table",
+					"instant": true,
+					"refId": "A"
+				}
+			]
+		},
+		{
+			"id": 8,
+			"type": "timeseries",
+			"title": "Payment Success Rate Trend",
+			"gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+			"targets": [
+				{
+					"expr": "sum(rate(coffer_verifications_total{outcome=\"verified\"}[5m])) by (network) / sum(rate(coffer_verifications_total[5m])) by (network) * 100",
+					"legendFormat": "{{network}}",
+					"refId": "A"
+				}
+			],
+			"fieldConfig": { "defaults": { "unit": "percent" } }
+		}
+	]
+}
