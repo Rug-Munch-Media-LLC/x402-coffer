@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Rug Munch Media LLC
-# --- facilitator_orchestration.py: verify/settle orchestration for FacilitatorRouter ---
+# --- facilitator_orchestration.py: verify/settle dispatch for FacilitatorRouter ---
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import math
-import os
 import random
 import time
 from datetime import UTC, datetime
@@ -15,25 +14,33 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .evm_verify import _eip7702_verify
-from .external_verify import normalize_settlement, verify_external, verify_solana
+from .external_verify import normalize_settlement, verify_external
+from .facilitator_chains import (
+    is_scaffolded_network,
+    scaffold_non_evm_verify,
+    settle_fallback_non_evm,
+    settle_fallback_solana_self_hosted,
+    verify_solana_payment,
+    verify_tron_payment_flow,
+)
 from .facilitator_config import (
     X402_NETWORK_WALLETS,
     X402_OFFLINE_MODE,
     X402_TIMEOUT_SECONDS,
     X402_WALLET,
 )
-from .models import VerifyResult
+from .facilitator_evm import (
+    is_evm_network,
+    settle_fallback_evm,
+    settle_self_hosted_evm,
+    verify_self_hosted_evm,
+)
 from .pricing import (
-    SCAFFOLDED_NETWORKS,
     asset_to_atomic,
     network_family,
-    network_verification_status,
     normalize_network_id,
-    resolve_asset_entry,
 )
 from .replay import REPLAY_HTTP_STATUS
-from .tron_verifier import verify_tron_payment
 
 if TYPE_CHECKING:
     from .facilitator_router import FacilitatorRouter
@@ -99,11 +106,11 @@ async def verify(
 
     # TRON: real TRC-20 verifier (no longer scaffolded).
     if network_family(network_id) == "tron":
-        return await _verify_tron(router, payment_id, tx_hash, network_id, asset, amount_usd)
+        return await verify_tron_payment_flow(router, payment_id, tx_hash, network_id, asset, amount_usd)
 
     # Other scaffolded networks stay scaffolded — never claimed verified.
-    if network_id in SCAFFOLDED_NETWORKS:
-        return _scaffold_non_evm_verify(payment_id, tx_hash, network_id, asset, amount_usd)
+    if is_scaffolded_network(network_id):
+        return scaffold_non_evm_verify(payment_id, tx_hash, network_id, asset, amount_usd)
 
     # Self-hosted / custom impl path (default).
     if router.self_hosted or router._impl_for(network_id) is not None:
@@ -150,147 +157,21 @@ async def _verify_self_hosted(
     router: FacilitatorRouter,
     payment_id: str,
     tx_hash: str,
-    network: str,
+    network_id: str,
     asset: str,
     amount_usd: float,
 ) -> dict[str, Any]:
-    network_id = normalize_network_id(network)
-    impl = router._impl_for(network_id) or router._get_self_facilitator()
-    payment = router._build_payment(payment_id, tx_hash, network_id, asset, amount_usd)
-    try:
-        result: Any = await impl.verify(payment)
-    except Exception as e:  # noqa: BLE001 — facilitator verify never raises
-        result = VerifyResult(verified=False, reason=f"facilitator verify error: {e}")
-    if getattr(result, "verified", False):
-        return {
-            "verified": True,
-            "reason": "",
-            "settlement": None,
-            "facilitator": "self-hosted",
-            "signer": getattr(result, "signer", ""),
-            "amount_atomic": getattr(result, "amount_atomic", 0),
-            "network": getattr(result, "network", None) or network_id,
-            "asset": getattr(result, "asset", None) or asset,
-        }
-    reason = getattr(result, "reason", "") or ""
-    if reason == "replay" or "replay" in reason:
-        return {
-            "verified": False,
-            "reason": "transaction already used (replay)",
-            "settlement": None,
-            "network": network_id,
-            "http_status": REPLAY_HTTP_STATUS,
-        }
-
-    # EIP-7702 self-verify fallback for EVM chains (receipt + payTo check).
-    if network_family(network_id) == "evm":
-        eip = await _eip7702_verify(tx_hash, network_id, asset, amount_usd)
-        if eip["verified"]:
-            eip["facilitator"] = "self-hosted-eip7702"
-            eip["network"] = network_id
-            eip["hex_reason"] = reason
-            return eip
-        reason = f"{reason}; EIP-7702: {eip.get('reason', '')}"
-    elif network_family(network_id) == "solana":
-        return await verify_solana(payment_id, tx_hash, network_id, asset, amount_usd)
-
+    """Dispatch self-hosted verify to the chain-family module."""
+    if is_evm_network(network_id):
+        return await verify_self_hosted_evm(router, payment_id, tx_hash, network_id, asset, amount_usd)
+    if network_family(network_id) == "solana":
+        return await verify_solana_payment(payment_id, tx_hash, network_id, asset, amount_usd)
     return {
         "verified": False,
-        "reason": reason,
+        "reason": "self-hosted verify unavailable for this chain family",
         "settlement": None,
         "facilitator": "self-hosted",
         "network": network_id,
-    }
-
-
-async def _verify_tron(
-    router: FacilitatorRouter,
-    payment_id: str,
-    tx_hash: str,
-    network: str,
-    asset: str,
-    amount_usd: float,
-) -> dict[str, Any]:
-    """Verify a TRON TRC-20 USDT payment via the Trongrid RPC."""
-    network_id = normalize_network_id(network)
-    recipient = X402_NETWORK_WALLETS.get(network_id) or X402_WALLET
-    rpc_url = os.getenv("X402_TRON_RPC", "https://api.trongrid.io")
-    fallbacks = [u.strip() for u in os.getenv("X402_TRON_RPC_FALLBACKS", "").split(",") if u.strip()]
-
-    result = await verify_tron_payment(
-        tx_hash=tx_hash,
-        recipient=recipient,
-        amount_usd=amount_usd,
-        rpc_url=rpc_url,
-        fallback_rpc_urls=fallbacks,
-    )
-    result["network"] = network_id
-    result["payment_id"] = payment_id
-    result["facilitator"] = "tron-rpc"
-    if result.get("verified"):
-        ok, reason = await router._enforce_replay(tx_hash, network_id)
-        if not ok:
-            return {
-                "verified": False,
-                "reason": reason,
-                "settlement": None,
-                "network": network_id,
-                "http_status": REPLAY_HTTP_STATUS,
-            }
-    return result
-
-
-def _scaffold_non_evm_verify(
-    payment_id: str,
-    tx_hash: str,
-    network: str,
-    asset: str,
-    amount_usd: float,
-) -> dict[str, Any]:
-    """[REVIEW] Scaffolded acceptance for TRON — NEVER returns verified.
-
-    Header structure, asset membership and non-negative USD amount are
-    validated; on-chain settlement is NOT checked. Result is explicitly
-    marked ``scaffolded`` and ``verified: false`` so it can never be
-    treated as paid until a real TRC-20 verifier is wired in.
-    """
-    network_id = normalize_network_id(network)
-    entry = resolve_asset_entry(network_id, asset)
-    if not payment_id or not tx_hash:
-        return {
-            "verified": False,
-            "reason": "needs_facilitator: missing payment_id/tx_hash in header",
-            "settlement": None,
-            "scaffolded": True,
-            "network": network_id,
-        }
-    if entry is None:
-        return {
-            "verified": False,
-            "reason": f"needs_facilitator: asset {asset!r} not in SUPPORTED_ASSETS for {network_id}",
-            "settlement": None,
-            "scaffolded": True,
-            "network": network_id,
-        }
-    if amount_usd is None or amount_usd < 0:
-        return {
-            "verified": False,
-            "reason": "needs_facilitator: invalid (non-finite/negative) amount",
-            "settlement": None,
-            "scaffolded": True,
-            "network": network_id,
-        }
-    return {
-        "verified": False,
-        "reason": "needs_facilitator: on-chain settlement verification not implemented for this chain",
-        "settlement": None,
-        "scaffolded": True,
-        "network": network_id,
-        "asset": asset,
-        "supported": True,
-        "verification_status": network_verification_status(network_id),
-        "note": "Header structure, asset and price validated; settlement NOT verified. "
-        "See VERIFICATION_STATUS.",
     }
 
 
@@ -319,7 +200,10 @@ async def settle(
         }
 
     if router.self_hosted or router._impl_for(network_id) is not None:
-        return await _settle_self_hosted(router, payment_id, tx_hash, network_id, asset, amount_usd)
+        if network_family(network_id) == "solana":
+            # C2 honesty fix: SPL RPC verifies receipts, never broadcasts.
+            return settle_fallback_solana_self_hosted(network_id, payment_id)
+        return await settle_self_hosted_evm(router, payment_id, tx_hash, network_id, asset, amount_usd)
 
     payload = {
         "paymentId": payment_id,
@@ -368,78 +252,8 @@ async def settle(
             except json.JSONDecodeError as e:
                 last_error = f"{config.name}: invalid JSON - {e}"
                 router.health.mark_failure(config)
-    if network_family(network_id) == "evm":
-        # EIP-7702 self-VERIFY checks on-chain receipts; it does NOT
-        # broadcast a settlement. Returning success here would fabricate
-        # a settlement record (C1 honesty fix) -> fail closed.
-        return {
-            "success": False,
-            "payment_id": payment_id,
-            "reason": (
-                "needs_facilitator: no external facilitator settled and "
-                "no self-hosted settle key configured (EIP-7702 verifies "
-                "on-chain receipts but does not broadcast settlements)"
-            ),
-            "scaffolded": True,
-            "network": network_id,
-            "facilitator": "eip-7702-verify-only",
-        }
+    if is_evm_network(network_id):
+        return settle_fallback_evm(network_id, payment_id)
     if network_family(network_id) in ("solana", "tron"):
-        return {
-            "success": False,
-            "payment_id": payment_id,
-            "reason": "needs_facilitator: settlement verification not implemented for this chain",
-            "scaffolded": True,
-            "network": network_id,
-        }
+        return settle_fallback_non_evm(network_id, payment_id)
     return {"success": False, "payment_id": payment_id, "reason": last_error}
-
-
-async def _settle_self_hosted(
-    router: FacilitatorRouter,
-    payment_id: str,
-    tx_hash: str,
-    network: str,
-    asset: str,
-    amount_usd: float,
-) -> dict[str, Any]:
-    network_id = normalize_network_id(network)
-    impl = router._impl_for(network_id) or router._get_self_facilitator()
-    payment = router._build_payment(payment_id, tx_hash, network_id, asset, amount_usd)
-    try:
-        settled_tx = await impl.settle(payment)
-    except Exception as e:  # noqa: BLE001 — settle failure is handled below
-        settled_tx = None
-        log.warning("x402_self_settle_error", extra={"error": str(e)})
-    if settled_tx:
-        return {
-            "success": True,
-            "transaction": str(settled_tx),
-            "network": network_id,
-            "payment_id": payment_id,
-            "facilitator": "self-hosted",
-            "settled_at": datetime.now(UTC).isoformat(),
-            "note": "Broadcast by self-hosted facilitator",
-        }
-    if network_family(network_id) == "solana":
-        # SPL RPC verifies on-chain receipts; it does NOT broadcast a
-        # settlement. Returning success here would fabricate a settlement
-        # record (C2 honesty fix) -> fail closed.
-        return {
-            "success": False,
-            "payment_id": payment_id,
-            "reason": (
-                "needs_facilitator: solana SPL RPC verifies on-chain "
-                "receipts but does not broadcast settlements"
-            ),
-            "scaffolded": True,
-            "network": network_id,
-            "facilitator": "solana-rpc-verify-only",
-        }
-    return {
-        "success": False,
-        "payment_id": payment_id,
-        "reason": "self-hosted settle unavailable: no authorization, "
-        "no facilitator key/RPC, or chain unreachable",
-        "facilitator": "self-hosted",
-    }
