@@ -1,20 +1,23 @@
-# AGENTS.md — {{PRODUCT_TITLE}}
+# AGENTS.md — Coffer
 
 > AI agent contract. Read this before touching anything in this repo.
 
 ## Status
-canonical · owner=crmuncher · last_updated={{TODAY}}
+canonical · owner=crmuncher · last_updated=2026-09-05
 
 ## What This Repo Is
-{{PRODUCT_PURPOSE}}
+Self-hosted x402 payment facilitator — accept HTTP 402 micropayments in one
+line of Python, on your own infrastructure. Your HTTP treasury, sovereign
+and open. EVM (EIP-3009/EIP-7702) + Solana (SPL transferChecked) + TRON
+(scaffolded). MCP-native for AI agent payments.
 
 ## Type
-`{{PRODUCT_TYPE}}` · language={{PRODUCT_LANGUAGE}}
+`backend` · language=Python 3.11+ / FastAPI
 
 ## Where It Lives
-- Source: `https://git.rugmunch.io/RugMunchMedia/{{PRODUCT_SLUG}}`
-- Deployed: {{DEPLOY_TARGET}}
-- Port: {{PORT}}
+- Source: `https://git.rugmunch.io/RugMunchMedia/x402-coffer`
+- Deployed: Docker container (Dockerfile pending — P0 fix)
+- Port: 8001
 
 ## Built With
 - Standards: [git.rugmunch.io/RugMunchMedia/standards](https://git.rugmunch.io/RugMunchMedia/standards)
