@@ -37,6 +37,9 @@ class PaymentResponse(BaseModel):
     network: str = Field(description="CAIP-2 network id")
     payment_id: str = ""
     facilitator: str = ""
+    #: Customer attribution: the caller identity (API key / auth token subject)
+    # that initiated the payment. Empty when the facilitator cannot attribute.
+    user_id: str = ""
     settled_at: str = Field(default="", description="ISO-8601 UTC settlement timestamp")
     payer: str | None = Field(default=None, description="Payer wallet address")
     error_reason: str | None = Field(

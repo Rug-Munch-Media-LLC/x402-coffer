@@ -302,6 +302,11 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     app.include_router(register_agents_router())
 
+    # Customer billing surface: settlement history + prepaid balance.
+    from coffer._engine.billing import router as billing_router
+
+    app.include_router(billing_router)
+
     # x402 V2 spec ops surface: /supported, /healthz, /readyz.
     from coffer.mcp import ops_router
 

@@ -191,6 +191,13 @@ async def settle(request: Request) -> JSONResponse:
         asset,
         amount_usd,
     )
+    # Customer attribution: explicit user_id wins (auth-proxy deployments),
+    # otherwise fall back to the caller identity (client IP / API key subject).
+    user_id = str(payload.get("user_id") or payload.get("userId") or "").strip()
+    if not user_id:
+        user_id = caller_key_from_request(request)
+    if user_id:
+        settlement["user_id"] = user_id
     return JSONResponse(content=settlement)
 
 

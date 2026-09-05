@@ -56,10 +56,13 @@ class SettleMixin:
         asset: str = "",
         amount_usd: float = 0.0,
         operation: str = "",
+        user_id: str = "",
     ) -> dict[str, Any]:
         """Settle a payment via the facilitator router.
 
         Returns a settlement receipt (to be Base64-encoded in PAYMENT-RESPONSE header).
+        ``user_id`` attributes the settlement to the initiating customer and is
+        persisted on the receipt so billing history can be filtered per user.
         """
         network = network or X402_DEFAULT_NETWORK
         asset = asset or X402_DEFAULT_ASSET
@@ -134,6 +137,10 @@ class SettleMixin:
                         hook(settlement)
                     except Exception:  # noqa: BLE001, S110 — post-settle hooks must never block
                         pass
+        # Stamp customer attribution BEFORE persisting so settlements.jsonl
+        # carries the user_id for per-customer billing history.
+        if user_id:
+            settlement["user_id"] = user_id
         self._record_settlement(settlement)
         settlement["extension_responses"] = _extension_header(settlement)
         return settlement
@@ -146,6 +153,7 @@ class SettleMixin:
         asset: str = "",
         amount_usd: float = 0.0,
         operation: str = "",
+        user_id: str = "",
     ) -> dict[str, Any]:
         """Settle a payment, raising ``SettleError`` on failure.
 
@@ -161,6 +169,7 @@ class SettleMixin:
             asset=asset,
             amount_usd=amount_usd,
             operation=operation,
+            user_id=user_id,
         )
         if settlement.get("success") is not True:
             raise SettleError(
