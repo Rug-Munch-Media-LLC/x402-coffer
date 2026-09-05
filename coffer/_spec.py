@@ -1,23 +1,19 @@
 """Resolve the vendored x402 spec implementation for the Coffer facade.
 
 The vendored spec (``vendor/x402/``) is written as a top-level ``x402``
-package — its submodules do ``from x402 import ...`` internally. In Coffer
-runtimes a venv ``.pth`` places ``vendor/`` at the front of ``sys.path`` so
-``import x402`` binds to the vendored copy (see ``vendor/README.md``). Where
-that activation is absent — e.g. an environment where the official Coinbase
-``x402`` SDK (v2.x) is installed — this module loads ``vendor/x402``
-explicitly and registers it as the top-level ``x402`` module so the vendored
-package's internal imports resolve to itself.
+package — its submodules do ``from x402 import ...`` internally. This module
+loads ``vendor/x402`` directly from the repository checkout (relative to this
+package, never a hardcoded path) via :mod:`importlib` and registers it as the
+top-level ``x402`` module so the vendored package's internal imports resolve
+to itself. No ``.pth`` file or ``sys.path`` manipulation is required — the
+resolution is fully programmatic and works in any venv, fresh or existing.
 
-[REVIEW] Shadowing trade-off: when the resolvable top-level ``x402`` is
-NOT the vendored spec, registration replaces ``sys.modules["x402"]``
-process-wide. This is the same trade-off the venv ``.pth`` makes at
-interpreter startup and is mandated by the single-vendored-spec-library
-design: ``app/routers/*`` import the official SDK inside ``try/except
-ImportError`` guards and degrade to ``SDK_AVAILABLE = False`` when the
-vendored copy wins. Code that truly needs the official Coinbase SDK surface
-must import it under a different mechanism — do not rely on both in one
-process.
+[REVIEW] Shadowing trade-off: registration replaces ``sys.modules["x402"]``
+process-wide. This is mandated by the single-vendored-spec-library design:
+``app/routers/*`` import the official SDK inside ``try/except ImportError``
+guards and degrade to ``SDK_AVAILABLE = False`` when the vendored copy wins.
+Code that truly needs the official Coinbase SDK surface must import it under
+a different mechanism — do not rely on both in one process.
 """
 
 from __future__ import annotations
@@ -33,8 +29,9 @@ _VENDOR_X402_DIR = pathlib.Path(__file__).resolve().parent.parent / "vendor" / "
 
 #: How the spec module was resolved (set by :func:`resolve_spec_module`):
 #: ``"top-level"`` — ``import x402`` already binds the vendored spec
-#: (venv ``.pth`` active); ``"facade-loaded"`` — the facade registered the
-#: vendored copy as ``sys.modules["x402"]`` itself.
+#: (e.g. a pre-existing ``.pth`` or an installed copy); ``"facade-loaded"`` —
+#: the facade registered the vendored copy as ``sys.modules["x402"]`` itself
+#: (the normal, ``.pth``-free path).
 SPEC_SOURCE: str = ""
 
 
@@ -60,10 +57,12 @@ def resolve_spec_module() -> types.ModuleType:
     Resolution order:
 
     1. ``sys.modules["x402"]`` already holds the vendored spec → reuse it.
-    2. ``import x402`` resolves to the vendored spec (venv ``.pth``) → use it.
-    3. Otherwise load ``vendor/x402`` from the repository checkout and
-       register it as top-level ``x402`` ([REVIEW] shadows any installed
-       official SDK for the rest of the process).
+    2. ``import x402`` resolves to the vendored spec (e.g. a pre-existing
+       ``.pth`` or an installed copy) → use it.
+    3. Otherwise load ``vendor/x402`` from the repository checkout (relative
+       to this package) and register it as top-level ``x402`` ([REVIEW]
+       shadows any installed official SDK for the rest of the process). This
+       is the normal path — no ``.pth`` file is required.
     """
     global SPEC_SOURCE
 

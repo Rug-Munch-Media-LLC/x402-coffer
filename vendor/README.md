@@ -15,17 +15,20 @@ what `x402` happens to be installed in the ambient environment.
   when the reference is updated.
 
 ## How it is activated
+
 A `vendor/` package on its own would only be importable as `vendor.x402`. To make the
-plain top-level name `x402` resolve here, the worktree venv ships an import-line `.pth`:
+plain top-level name `x402` resolve here, `coffer/_spec.py` loads `vendor/x402` directly
+via `importlib` and registers it as the top-level `x402` module:
 
-    .venv/lib/python3.12/site-packages/_x402_vendor.pth
-        import sys; sys.path.insert(0, "/tmp/opencode/x402-wt-deps/vendor")
+- The vendored path is resolved **relative to the package** (`coffer/_spec.py` →
+  `../vendor/x402`), never a hardcoded absolute path.
+- No `.pth` file and no `sys.path` manipulation is required — `import coffer` works in
+  any venv, fresh or existing.
+- `coffer._spec.SPEC_SOURCE` reports how the spec was resolved: `"facade-loaded"` (the
+  normal, `.pth`-free path) or `"top-level"` (a pre-existing `.pth`/installed copy won).
 
-The `.pth` import line runs at interpreter startup and places `vendor/` at the front of
-`sys.path`, so `import x402` / `from x402 import build_payment_required, FacilitatorRouter`
-bind to this vendored copy inside the venv. Outside the venv (e.g. system `pytest`),
-`tests/conftest.py` independently resolves the spec library from the same reference
-path, so both entry points agree.
+Outside the venv (e.g. system `pytest`), `tests/conftest.py` independently resolves the
+spec library from the same reference path, so both entry points agree.
 
 > `[REVIEW]` This intentionally shadows any other `x402` distribution installed in the
 > venv (e.g. the official Coinbase x402 SDK). `app/routers/*` import the official SDK's
