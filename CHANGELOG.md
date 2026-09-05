@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026-09-05]
+
+### Changed
+- Split solana_verifier.py (430L) into 4 focused modules + thin facade
+- Split models.py (404L) into payment + settlement + response modules + thin facade
+- All modules now under 400 lines (thin facade pattern)
+
 ### Competition-Sourced Features (2026-09)
 - **Pre-settle + post-settle hooks** — register callbacks before/after settlement (from JS @x402/server)
 - **Weighted random facilitator selection** — prevents thundering herd on best facilitator (from Coinbase x402-py)

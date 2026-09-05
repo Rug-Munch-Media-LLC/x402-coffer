@@ -63,6 +63,34 @@ async def premium_endpoint(request):
 
 ---
 
+## Architecture
+
+Coffer's settlement engine is modular by design. Large modules are split into focused, single-responsibility files behind a thin facade, so the public API stays stable while internals stay readable:
+
+*   **`coffer/_engine/solana_verifier.py`** — thin facade over four focused modules:
+    *   `solana_constants.py` — chain constants, limits, and configuration
+    *   `solana_parse.py` — transaction/instruction parsing
+    *   `solana_result.py` — verification result types
+    *   `solana_transfer.py` — SPL transfer verification logic
+*   **`coffer/_engine/models.py`** — thin facade over three focused modules:
+    *   `models_payment.py` — payment request/authorization models
+    *   `models_settlement.py` — settlement and receipt models
+    *   `models_response.py` — verify/settle response models
+
+All modules are kept under 400 lines using the thin facade pattern throughout.
+
+---
+
+## Parity with Pry
+
+Coffer's built-in facilitator matches pry's self-facilitator in verification capabilities:
+
+*   **EVM:** EIP-3009 (transferWithAuthorization) and EIP-7702 verification
+*   **Solana:** SPL `transferChecked` on-chain verification with payer binding
+*   **TRON:** TRC-20 verification scaffolded
+
+---
+
 ## How It Works
 
 Coffer implements the x402 specification to bridge HTTP requests with on-chain settlement.
