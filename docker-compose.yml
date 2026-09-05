@@ -1,0 +1,21 @@
+# Coffer — docker-compose for standalone deployment
+# Usage: docker compose up -d
+# Configure receiving wallets via .env (see .env.example)
+version: "3.9"
+
+services:
+  coffer:
+    build: .
+    container_name: coffer
+    ports:
+      - "8001:8001"
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/v1/x402/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
