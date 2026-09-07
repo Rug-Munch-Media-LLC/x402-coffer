@@ -76,8 +76,11 @@ from coffer._engine.service import (  # noqa: E402
 )
 
 # Server-authoritative price for the gated operation (atomic quoted off this).
+# MUST equal the default X402_PRICING "api_access" price_usd (0.01): the wire
+# /v1/x402/verify endpoint now rejects any client-asserted amount below the
+# operation's server price (C1), so honest e2e payments use the real price.
 SERVICE_OPERATION = "api_access"
-SERVICE_PRICE_USD = 0.001  # -> 1000 atomic USDC on eip155:8453 (6 decimals)
+SERVICE_PRICE_USD = 0.01  # -> 10000 atomic USDC on eip155:8453 (6 decimals)
 
 CAIP2_BASE = "eip155:8453"
 ASSET = "USDC"
@@ -139,9 +142,7 @@ class TestFacilitator:
                 network=network,
                 asset=asset,
             )
-        return VerifyResult(
-            verified=True, reason="", amount_atomic=paid, network=network, asset=asset
-        )
+        return VerifyResult(verified=True, reason="", amount_atomic=paid, network=network, asset=asset)
 
     async def settle(self, payment: dict[str, Any]) -> str | None:
         """Return a broadcast tx hash, or None when not settlable."""
@@ -153,9 +154,7 @@ class TestFacilitator:
 class X402E2EHarness:
     """A REAL FastAPI app (repo router + middleware) + injected facilitator."""
 
-    def __init__(
-        self, app: FastAPI, router: FacilitatorRouter, facilitator: TestFacilitator
-    ) -> None:
+    def __init__(self, app: FastAPI, router: FacilitatorRouter, facilitator: TestFacilitator) -> None:
         self.app = app
         self.router = router
         self.facilitator = facilitator
@@ -166,9 +165,7 @@ class X402E2EHarness:
                 scope["client"] = (ip, 9999)  # caller identity lives on the IP
             await self.app(scope, receive, send)
 
-        return httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=_scoped), base_url="http://testserver"
-        )
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=_scoped), base_url="http://testserver")
 
     def caller(self, ip: str = "1.1.1.1") -> httpx.AsyncClient:
         return self._client_for(ip)

@@ -16,9 +16,7 @@ from coffer._engine.extensions.agent_identity import (
 
 
 def test_declare_shape_uses_camel_case_aliases() -> None:
-    payload = declare_agent_identity(
-        agent_id="agent-42", identity_registry="0xreg", agent_name="ScoutBot"
-    )
+    payload = declare_agent_identity(agent_id="agent-42", identity_registry="0xreg", agent_name="ScoutBot")
     info = payload["agentIdentity"]["info"]
     assert info["agentId"] == "agent-42"
     assert info["identityRegistry"] == "0xreg"
@@ -68,8 +66,26 @@ async def test_agents_router_mounted_and_verify_attribution() -> None:
     os.environ.setdefault("X402_WALLET", "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18")
     os.environ.setdefault("X402_PAY_TO", "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18")
     from coffer._engine.config import create_app
+    from coffer._engine.middleware import get_default_store
 
     app = create_app()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        # The agent registry + payer ledger is a PAID surface (audit H3): an
+        # unpaid caller gets the 402 challenge, not the registry dump.
         r = await c.get("/v1/x402/agents")
+        assert r.status_code == 402
+        # A caller holding a server-verified payment (positive bound amount)
+        # replays with X-Payment-ID and reaches the registry.
+        from coffer._engine.middleware import HEADER_X_PAYMENT_ID
+
+        get_default_store().record(
+            payment_id="pay_agents_gate",
+            caller_key="",
+            tx_hash="0xagents",
+            network="eip155:8453",
+            asset="USDC",
+            amount_usd=0.01,
+            verified=True,
+        )
+        r = await c.get("/v1/x402/agents", headers={HEADER_X_PAYMENT_ID: "pay_agents_gate"})
         assert r.status_code == 200 and "agents" in r.json()

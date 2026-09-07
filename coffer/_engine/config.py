@@ -110,20 +110,27 @@ class X402Settings(BaseModel):
     port: int = 8001
     debug: bool = False
 
-    #: Path prefixes exempt from the 402 gate (payment protocol + meta routes).
-    #: ``/v1/x402`` covers ``/v1/x402/{payment,verify,settle,health}``.
+    #: Path prefixes exempt from the 402 gate. Narrowed (audit H3): ONLY the
+    #: x402 protocol endpoints a payer must reach BEFORE paying, plus liveness/
+    #: readiness + self-description routes. The broad ``/v1/x402`` prefix is
+    #: gone (it freed ``/v1/x402/agents``, ``/v1/x402/metrics``, ``/v1/x402/
+    #: bazaar``), and the revenue/ops surfaces (``/dashboard``, ``/metrics``,
+    #: agent registry, observability metrics) are now payment/auth-gated.
     free_paths: frozenset[str] = frozenset(
         {
-            "/v1/x402",
+            # x402 protocol endpoints (pre-payment by design).
+            "/v1/x402/payment",
+            "/v1/x402/verify",
+            "/v1/x402/settle",
+            "/v1/x402/health",
+            # Liveness / readiness / self-description — no revenue data.
             "/health",
+            "/healthz",
+            "/readyz",
             "/docs",
             "/openapi",
             "/version",
-            "/dashboard",
             "/supported",
-            "/healthz",
-            "/readyz",
-            "/metrics",
         }
     )
 

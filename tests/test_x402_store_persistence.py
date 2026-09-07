@@ -12,7 +12,7 @@ def test_no_redis_configured_is_memory_only(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("X402_REDIS_URL", raising=False)
     store = PaymentStore()
     assert store._redis is None
-    store.record(payment_id="p1", caller_key="c1")
+    store.record(payment_id="p1", caller_key="c1", amount_usd=0.01)
     assert store.is_paid("p1", "c1") is True
 
 
@@ -20,7 +20,7 @@ def test_bad_redis_url_degrades_to_memory(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("X402_REDIS_URL", "redis://127.0.0.1:1/0")  # nothing listens
     store = PaymentStore()
     assert store._redis is None  # ping failed -> degraded, never raised
-    store.record(payment_id="p1", caller_key="c1")
+    store.record(payment_id="p1", caller_key="c1", amount_usd=0.01)
     assert store.is_paid("p1", "c1") is True
 
 
@@ -33,7 +33,7 @@ def test_record_survives_new_store_instance_via_mirror(monkeypatch: pytest.Monke
     object.__setattr__(store1, "_redis", None)
     # Inject the fake client directly (no live redis in CI).
     store1._redis = fakeredis
-    store1.record(payment_id="pid-x", caller_key="9.9.9.9")
+    store1.record(payment_id="pid-x", caller_key="9.9.9.9", amount_usd=0.01)
 
     store2 = PaymentStore()
     store2._redis = fakeredis

@@ -39,11 +39,23 @@ from .middleware import (
     payment_required_body,
     payment_required_headers,
 )
-from .service import REPLAY_HTTP_STATUS, VERIFICATION_STATUS, get_facilitator_router
+from .service import (
+    REPLAY_HTTP_STATUS,
+    VERIFICATION_STATUS,
+    get_facilitator_router,
+    validate_client_amount,
+)
 
 router = APIRouter(prefix="/v1/x402", tags=["x402"])
 
 __all__ = ["health", "payment_challenge", "router", "settle", "verify"]
+
+#: Operation the middleware gates every non-free path under. The 402 challenge
+#: quotes this operation's server-authoritative price, so a verify that claims
+#: LESS than that quote is an underpayment and must never be honoured. This is
+#: the "bind 402 quote -> verify" half of server-authoritative pricing: the
+#: client can never assert an amount below the operation's required minimum.
+GATE_OPERATION = "api_access"
 
 
 def _get_store() -> PaymentStore:
@@ -70,11 +82,28 @@ async def _read_json(request: Request) -> dict[str, Any]:
         return {}
 
 
-def _amount(payload: dict[str, Any]) -> float:
+def _amount(payload: dict[str, Any]) -> float | None:
+    """Parse a client-asserted USD amount, or ``None`` when absent/invalid.
+
+    Security (C1): a MISSING amount must never silently default to a valid
+    zero — the caller has to state an amount, and the endpoints reject
+    ``None``/``<= 0`` with HTTP 400 before any verification is attempted.
+    """
+    raw = payload.get("amount_usd", payload.get("amountUsd"))
+    if raw is None:
+        return None
     try:
-        return float(payload.get("amount_usd", payload.get("amountUsd", 0.0)) or 0.0)
+        return float(raw)
     except (TypeError, ValueError):
-        return 0.0
+        return None
+
+
+def _reject_amount(message: str) -> JSONResponse:
+    """400 for an invalid/under-minimum client amount on the wire path."""
+    return JSONResponse(
+        status_code=400,
+        content={"x402Version": 1, "error": message},
+    )
 
 
 @router.get("/payment")
@@ -98,6 +127,17 @@ async def verify(request: Request) -> JSONResponse:
             status_code=400,
             content={"x402Version": 1, "error": "payment_id and tx_hash are required"},
         )
+
+    # C1/H1: never verify a zero, negative or MISSING amount (an absent amount
+    # must not default to a valid zero), and never let the client assert an
+    # amount below the gated operation's server-authoritative price. Both are
+    # hard HTTP 400s — nothing is delegated to a facilitator.
+    if amount_usd is None or amount_usd <= 0:
+        return _reject_amount("amount_usd must be a positive number (missing/zero/negative rejected)")
+    if network or asset:
+        ok, reason = validate_client_amount(GATE_OPERATION, amount_usd, asset, network)
+        if not ok:
+            return _reject_amount(f"amount_usd rejected: {reason}")
 
     result = await get_facilitator_router().verify(
         payment_id,
@@ -183,6 +223,8 @@ async def settle(request: Request) -> JSONResponse:
             status_code=400,
             content={"error": "payment_id and tx_hash are required"},
         )
+    if amount_usd is None or amount_usd <= 0:
+        return _reject_amount("amount_usd must be a positive number (missing/zero/negative rejected)")
 
     settlement = await get_facilitator_router().settle(
         payment_id,

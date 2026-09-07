@@ -3,6 +3,7 @@
 # --- self_facilitator.py: self-hosted EIP-3009 SelfFacilitator ---
 from __future__ import annotations
 
+import math
 import os
 from typing import Any
 
@@ -127,6 +128,16 @@ class SelfFacilitator:
             amount_usd = float(payment.get("amount_usd") or 0.0)
         except (TypeError, ValueError):
             amount_usd = 0.0
+        # C1: a missing or non-positive amount must fail closed — deriving the
+        # required atomic amount from $0 (or dust) would let a worthless
+        # authorization verify. Never reach the crypto/chain checks with it.
+        if not math.isfinite(amount_usd) or amount_usd <= 0:
+            return VerifyResult(
+                verified=False,
+                reason="amount_usd must be a finite positive number (USD)",
+                asset=asset,
+                network=network,
+            )
         entry = resolve_asset_entry(network, asset)
         if entry is None:
             return VerifyResult(

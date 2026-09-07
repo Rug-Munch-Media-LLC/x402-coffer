@@ -66,9 +66,7 @@ def test_recent_events_filter_and_order() -> None:
     led.record_verify(
         payment_id="a", tx_hash="0xa", network="n", asset="USDC", amount_atomic=1, verified=True
     )
-    led.record_settle(
-        payment_id="b", tx_hash="0xb", network="n", asset="USDC", amount_atomic=2, success=True
-    )
+    led.record_settle(payment_id="b", tx_hash="0xb", network="n", asset="USDC", amount_atomic=2, success=True)
     settles = led.recent_events(kind="settle")
     assert len(settles) == 1 and settles[0]["payment_id"] == "b"
     assert led.recent_events(limit=1).__len__() == 1
@@ -90,9 +88,7 @@ def test_bounded_eviction() -> None:
 
 def test_observe_hooks_fail_safe_on_garbage() -> None:
     # Malformed result dicts must never raise.
-    observe_verify(
-        {"verified": "not-a-bool", "amount_atomic": "junk"}, payment_id="x", tx_hash="0xx"
-    )
+    observe_verify({"verified": "not-a-bool", "amount_atomic": "junk"}, payment_id="x", tx_hash="0xx")
     observe_settle({}, payment_id="y", tx_hash="0xy")
     assert get_ledger() is get_ledger()
 
@@ -120,16 +116,34 @@ def test_prometheus_format() -> None:
 
 async def test_metrics_endpoint_mounted() -> None:
     import os
+    import uuid
 
     os.environ.setdefault("X402_WALLET", "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18")
     os.environ.setdefault("X402_PAY_TO", "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18")
     import httpx
 
     from coffer._engine.config import create_app
+    from coffer._engine.middleware import HEADER_X_PAYMENT_ID, get_default_store
+
+    # Observability metrics expose settlement volume/tx hashes — payment-gated
+    # (audit H3). An unpaid caller gets 402; a verified caller reaches them.
+    payment_id = f"pay_obs_{uuid.uuid4().hex}"
+    get_default_store().record(
+        payment_id=payment_id,
+        caller_key="",
+        tx_hash=f"0x{payment_id}",
+        network="eip155:8453",
+        asset="USDC",
+        amount_usd=0.01,
+        verified=True,
+    )
+    headers = {HEADER_X_PAYMENT_ID: payment_id}
 
     app = create_app()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/v1/x402/metrics")
+        assert r.status_code == 402
+        r = await c.get("/v1/x402/metrics", headers=headers)
         assert r.status_code == 200 and "counters" in r.json()
-        r = await c.get("/v1/x402/metrics?format=prometheus")
+        r = await c.get("/v1/x402/metrics?format=prometheus", headers=headers)
         assert "coffer_verifications_total" in r.text

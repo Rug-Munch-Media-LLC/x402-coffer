@@ -3,6 +3,7 @@
 # --- evm_verify.py: EIP-7702 self-verify receipt fallback ---
 from __future__ import annotations
 
+import math
 import os
 from typing import Any
 
@@ -68,6 +69,15 @@ def _eip7702_matches(tx: dict[str, Any], network: str, asset: str, amount_usd: f
     pay_to = _eip7702_wallet(network)
     if not pay_to or pay_to == "coffer-unconfigured-wallet":
         return False, "server wallet not configured"
+    # C1: a missing/zero/non-finite amount makes the required atomic amount 0
+    # and would let a 0-value/dust receipt verify. Fail closed on it here too
+    # (defense in depth — the HTTP surface already rejects such amounts).
+    try:
+        amount_usd = float(amount_usd)
+    except (TypeError, ValueError):
+        amount_usd = 0.0
+    if not math.isfinite(amount_usd) or amount_usd <= 0:
+        return False, "invalid payment amount (missing/zero/non-finite)"
     tx_to = str(tx.get("to") or "").lower()
     entry = resolve_asset_entry(network, asset)
     if entry is None:

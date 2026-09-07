@@ -15,9 +15,14 @@ Caller identity
 ---------------
 Coffer has no first-party API-key auth; the caller identity is the same
 best-effort ``caller_key`` used by the payment middleware (client IP / API
-key subject recorded at verify time). Deployments that front coffer with an
-auth proxy may set ``X-User-Id`` on the request to attribute the billing
-view to a specific customer; the header always wins over the raw caller key.
+key subject recorded at verify time). A client-supplied ``X-User-Id`` header
+is NEVER trusted for attribution — it is trivially spoofable and would turn
+``/v1/billing/*`` into an IDOR oracle for any other customer's ledger. The
+billing view is therefore attributed exclusively to the verified payment's
+recorded ``caller_key`` (the identity the payment gate itself bound the
+``X-Payment-ID`` to). Deployments that front coffer with an auth proxy should
+terminate caller identity at the proxy and rely on the caller key / proxy IP
+binding; there is no first-party customer-id merge.
 """
 
 # SPDX-License-Identifier: MIT
@@ -43,8 +48,6 @@ router = APIRouter(prefix="/v1/billing", tags=["billing"])
 
 __all__ = ["billing_balance", "billing_history", "router"]
 
-_HEADER_USER_ID = "x-user-id"
-
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     """Read a JSONL audit file, skipping corrupt lines (fail-open, read-only)."""
@@ -68,13 +71,16 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _user_id_from_request(request: Request) -> str:
-    """Caller identity for billing attribution.
+    """Caller identity for billing attribution — the verified payment's caller.
 
-    ``X-User-Id`` header (set by an auth proxy) wins; otherwise the same
-    best-effort caller key the payment middleware records.
+    Security (H2): the client-supplied ``X-User-Id`` header is NEVER consulted.
+    It is unauthenticated and spoofable, and honouring it would let any paid
+    caller read another customer's settlement history/balance. Attribution is
+    exclusively the same ``caller_key`` the payment middleware binds verified
+    ``X-Payment-ID`` replays to, so a caller can only ever see the ledger rows
+    recorded against their own verified payments.
     """
-    header_user = (request.headers.get(_HEADER_USER_ID) or "").strip()
-    return header_user or caller_key_from_request(request)
+    return caller_key_from_request(request)
 
 
 def _ledger_for_user(user_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

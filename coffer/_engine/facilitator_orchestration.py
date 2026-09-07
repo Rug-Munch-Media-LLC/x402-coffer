@@ -83,11 +83,14 @@ async def verify(
     if not network_id:
         return {"verified": False, "reason": "unsupported network", "settlement": None}
 
-    # Reject invalid amounts before any network call.
-    if amount_usd is None or not math.isfinite(float(amount_usd)) or amount_usd < 0:
+    # Reject invalid amounts before any network call. C1: zero is NOT a valid
+    # amount — a $0/dust claim would make the required atomic amount 0 and let
+    # a worthless on-chain transfer verify. Only a strictly positive, finite
+    # amount may proceed (None is handled by the isfinite check below).
+    if amount_usd is None or not math.isfinite(float(amount_usd)) or amount_usd <= 0:
         return {
             "verified": False,
-            "reason": "invalid (non-finite/negative) amount",
+            "reason": "invalid (non-finite/<=0) amount",
             "settlement": None,
             "network": network_id,
         }

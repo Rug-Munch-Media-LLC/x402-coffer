@@ -9,6 +9,7 @@ validity window.
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,8 +32,9 @@ class PaymentStore:
     Mirrors the canonical ``X402Handler`` replay contract:
 
     - ``is_paid(payment_id, caller_key)`` is True only when the id was verified,
-      has not exceeded ``PAYMENT_VALIDITY_SECONDS``, and — when it was recorded
-      with a caller key — the replaying caller matches it.
+      has not exceeded ``PAYMENT_VALIDITY_SECONDS``, carries a positive
+      server-confirmed ``amount_usd`` (zero/absent amounts fail closed), and —
+      when it was recorded with a caller key — the replaying caller matches it.
     - A record without an ``expires_at`` (pre-hardening) fails closed.
     """
 
@@ -65,7 +67,15 @@ class PaymentStore:
         facilitator: str = "",
         verified: bool = True,
     ) -> None:
-        """Record a verified payment id bound to ``caller_key`` for the TTL."""
+        """Record a verified payment id bound to ``caller_key`` for the TTL.
+
+        ``amount_usd`` is the SERVER-CONFIRMED paid amount (USD) — the wire
+        path only ever records amounts that passed server-side verification
+        and the operation's required minimum. ``is_paid`` fails closed on any
+        record that does not carry a positive finite amount, so a client-
+        asserted zero (the historical default when ``amount_usd`` was omitted)
+        can never unlock the gate.
+        """
         self._records[payment_id] = {
             "payment_id": payment_id,
             "tx_hash": tx_hash,
@@ -119,6 +129,16 @@ class PaymentStore:
             if datetime.fromisoformat(expires_at) <= datetime.now(UTC):
                 return False
         except ValueError:
+            return False
+        # Server-authoritative amount gate (C1/H1): a record is only honoured
+        # when it carries a positive, finite server-confirmed amount. Zero /
+        # missing amounts (e.g. a client-asserted default) never pass — the
+        # paid amount is bound at verify time against the operation minimum.
+        try:
+            recorded_amount = float(rec.get("amount_usd"))
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(recorded_amount) or recorded_amount <= 0:
             return False
         stored_caller = rec.get("caller_key") or ""
         if stored_caller:

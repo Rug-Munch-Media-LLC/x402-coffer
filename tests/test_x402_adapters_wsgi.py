@@ -18,9 +18,7 @@ class _FakeFlaskApp:
 
     def _serve(self, environ, start_response):  # noqa: ANN001
         body = b'{"ok": true}'
-        start_response(
-            "200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))]
-        )
+        start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
         return [body]
 
 
@@ -65,7 +63,7 @@ def test_unpaid_request_gets_spec_402() -> None:
 def test_valid_payment_id_passes_through() -> None:
     store = PaymentStore()
     gate = Flask402Gate(_FakeFlaskApp().wsgi_app, store=store, pay_to_address=PAY_TO)
-    store.record(payment_id="pid-1", caller_key="1.2.3.4")
+    store.record(payment_id="pid-1", caller_key="1.2.3.4", amount_usd=0.01)
     code, _, body = _run(gate, _environ(payment_id="pid-1"))
     assert code == 200
     assert json.loads(body)["ok"] is True
@@ -74,7 +72,7 @@ def test_valid_payment_id_passes_through() -> None:
 def test_wrong_caller_payment_id_rejected() -> None:
     store = PaymentStore()
     gate = Flask402Gate(_FakeFlaskApp().wsgi_app, store=store, pay_to_address=PAY_TO)
-    store.record(payment_id="pid-2", caller_key="5.6.7.8")
+    store.record(payment_id="pid-2", caller_key="5.6.7.8", amount_usd=0.01)
     code, _, _ = _run(gate, _environ(payment_id="pid-2", remote_addr="1.2.3.4"))
     assert code == 402  # caller-bound replay enforced over WSGI too
 

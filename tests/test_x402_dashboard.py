@@ -1,11 +1,35 @@
-"""Tests for the ops dashboard."""
+"""Tests for the ops dashboard.
+
+The dashboard renders revenue totals and recent settlement tx hashes, so per
+audit H3 it now sits BEHIND the payment gate (it was previously on the free
+path). These tests assert the gate: unpaid requests get 402, and a caller
+holding a server-verified payment (positive bound amount) reaches the HTML.
+"""
 
 from __future__ import annotations
 
 import os
+import uuid
 
 import httpx
 import pytest
+
+from coffer._engine.middleware import HEADER_X_PAYMENT_ID, get_default_store
+
+
+def _paid_headers() -> dict[str, str]:
+    """Record a verified payment on the shared store and return a replay header."""
+    payment_id = f"pay_dash_{uuid.uuid4().hex}"
+    get_default_store().record(
+        payment_id=payment_id,
+        caller_key="",
+        tx_hash=f"0x{payment_id}",
+        network="eip155:8453",
+        asset="USDC",
+        amount_usd=0.01,
+        verified=True,
+    )
+    return {HEADER_X_PAYMENT_ID: payment_id}
 
 
 @pytest.fixture()
@@ -18,9 +42,16 @@ def app():  # type: ignore[no-untyped-def]
 
 
 @pytest.mark.asyncio
-async def test_dashboard_serves_html(app):  # type: ignore[no-untyped-def]
+async def test_dashboard_is_payment_gated(app):  # type: ignore[no-untyped-def]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/dashboard")
+    assert r.status_code == 402  # revenue surface is no longer free
+
+
+@pytest.mark.asyncio
+async def test_dashboard_serves_html_to_paid_caller(app):  # type: ignore[no-untyped-def]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/dashboard", headers=_paid_headers())
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "x402 Coffer" in r.text
@@ -40,7 +71,8 @@ async def test_metrics_snapshot_includes_recent_settlements(app):  # type: ignor
         success=True,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.get("/v1/x402/metrics")
+        r = await c.get("/v1/x402/metrics", headers=_paid_headers())
+    assert r.status_code == 200
     body = r.json()
     assert isinstance(body.get("recent_settlements"), list)
     assert any(e["payment_id"] == "d1" for e in body["recent_settlements"])
@@ -49,5 +81,5 @@ async def test_metrics_snapshot_includes_recent_settlements(app):  # type: ignor
 @pytest.mark.asyncio
 async def test_dashboard_is_read_only(app):  # type: ignore[no-untyped-def]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post("/dashboard")
+        r = await c.post("/dashboard", headers=_paid_headers())
     assert r.status_code == 405  # GET-only surface
