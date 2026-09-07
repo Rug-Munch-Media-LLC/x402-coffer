@@ -150,9 +150,12 @@ class FacilitatorRouter:
         network: str,
         asset: str,
         amount_usd: float,
+        caller_key: str = "",
     ) -> dict[str, Any]:
         """Verify a payment with the best available facilitator."""
-        return await _verify_impl(self, payment_id, tx_hash, network, asset, amount_usd)
+        return await _verify_impl(
+            self, payment_id, tx_hash, network, asset, amount_usd, caller_key=caller_key
+        )
 
     async def settle(
         self,
@@ -161,9 +164,12 @@ class FacilitatorRouter:
         network: str,
         asset: str,
         amount_usd: float,
+        caller_key: str = "",
     ) -> dict[str, Any]:
         """Confirm settlement with the best available facilitator."""
-        return await _settle_impl(self, payment_id, tx_hash, network, asset, amount_usd)
+        return await _settle_impl(
+            self, payment_id, tx_hash, network, asset, amount_usd, caller_key=caller_key
+        )
 
 
 # ── Global router instance (mirrors x402-py accessors) ──────────────────────

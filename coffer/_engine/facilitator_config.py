@@ -37,7 +37,20 @@ X402_NETWORK_WALLETS = {
     "tron:mainnet": _env_first("X402_WALLET_TRON", "X402_TRON_PAY_TO"),
 }
 X402_SELF_FACILITATE = os.getenv("X402_SELF_FACILITATE", "1").lower() in ("1", "true")
-X402_SELF_FACILITATOR_KEY = os.getenv("X402_SELF_FACILITATOR_KEY", "")
+# Facilitator signing key: env first, then a secret FILE (Docker/K8s secret,
+# gopass export). Never a hardcoded default — ``""`` means "not configured"
+# and the config layer fails fast before a self-hosted settle can silently
+# no-op. Mirrors ``X402Settings.self_facilitator_key`` resolution.
+_X402_SIGNING_KEY_FILE = os.getenv("X402_SELF_FACILITATOR_KEY_FILE", "")
+if os.getenv("X402_SELF_FACILITATOR_KEY", ""):
+    X402_SELF_FACILITATOR_KEY = os.getenv("X402_SELF_FACILITATOR_KEY", "")
+elif _X402_SIGNING_KEY_FILE:
+    try:
+        X402_SELF_FACILITATOR_KEY = pathlib.Path(_X402_SIGNING_KEY_FILE).read_text().strip()
+    except OSError:
+        X402_SELF_FACILITATOR_KEY = ""
+else:
+    X402_SELF_FACILITATOR_KEY = ""
 X402_SELF_FACILITATOR_RPC = os.getenv("X402_SELF_FACILITATOR_RPC", "")
 X402_OFFLINE_MODE = os.getenv("X402_OFFLINE_MODE", "0").lower() in ("1", "true")
 

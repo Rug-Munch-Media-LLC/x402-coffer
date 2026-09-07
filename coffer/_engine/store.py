@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,11 +20,37 @@ __all__ = [
     "PaymentStore",
     "get_default_store",
     "set_default_store",
+    "validate_payment_id",
 ]
 
 #: TTL for verified payment ids (mirrors x402-py ``PAYMENT_VALIDITY_SECONDS``;
 #: env ``X402_PAYMENT_TTL`` overrides).
 PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "3600"))
+
+#: Canonical payment-id shape. The x402 wire contract quotes 16-128 chars of
+#: ``[A-Za-z0-9_-]``; Coffer REJECTS malformed/oversized ids outright (fail
+#: closed) while remaining permissive on the lower bound so short legacy ids
+#: keep working. Anything outside this charset (spaces, control chars, `/`,
+#: unicode, …) or longer than 128 chars is refused before it can reach a
+#: store record, a Redis key or a ledger row.
+PAYMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+PAYMENT_ID_MAX_LEN = 128
+
+
+def validate_payment_id(payment_id: Any) -> str:
+    """Return an error message when ``payment_id`` is malformed/oversized.
+
+    ``""`` means the id is acceptable. Used by :class:`PaymentStore.record`
+    (which raises) and by the HTTP router (which maps the message onto an
+    RFC 7807 ``400`` problem before any verification is attempted).
+    """
+    if not isinstance(payment_id, str) or not payment_id:
+        return "payment_id must be a non-empty string"
+    if len(payment_id) > PAYMENT_ID_MAX_LEN:
+        return f"payment_id too long (max {PAYMENT_ID_MAX_LEN} chars)"
+    if not PAYMENT_ID_RE.fullmatch(payment_id):
+        return "payment_id may only contain letters, digits, '-' or '_'"
+    return ""
 
 
 class PaymentStore:
@@ -41,6 +68,11 @@ class PaymentStore:
     def __init__(self, *, validity_seconds: int = PAYMENT_VALIDITY_SECONDS) -> None:
         self.validity_seconds = validity_seconds
         self._records: dict[str, dict[str, Any]] = {}
+        #: Settle-outcome cache keyed by payment_id (``{success: True}`` only —
+        #: failed attempts are never cached so they can be retried). Drives the
+        #: idempotent ``POST /v1/x402/settle`` contract: a repeat settle returns
+        #: the stored first outcome instead of re-rolling a facilitator.
+        self._settlements: dict[str, dict[str, Any]] = {}
         # W2 persistence: optional Redis mirror so verified payment state
         # survives restarts / multi-instance deployments. Memory remains the
         # primary read path; any Redis error degrades to memory-only.
@@ -76,6 +108,9 @@ class PaymentStore:
         asserted zero (the historical default when ``amount_usd`` was omitted)
         can never unlock the gate.
         """
+        err = validate_payment_id(payment_id)
+        if err:
+            raise ValueError(err)
         self._records[payment_id] = {
             "payment_id": payment_id,
             "tx_hash": tx_hash,
@@ -148,6 +183,96 @@ class PaymentStore:
     def get(self, payment_id: str) -> dict[str, Any] | None:
         """Return the raw record for a payment id, if present."""
         return self._records.get(payment_id)
+
+    # ── settle-outcome cache (idempotent /v1/x402/settle) ───────────────────
+
+    def record_settle_outcome(
+        self,
+        *,
+        payment_id: str,
+        caller_key: str = "",
+        outcome: dict[str, Any] | None = None,
+    ) -> None:
+        """Cache a SUCCESSFUL settlement so a repeat settle is a no-op replay.
+
+        Only ``success: True`` outcomes are stored — a failed attempt must be
+        retryable. Caller-bound like the payment record itself, so a repeat
+        settle from a different caller is refused by the reconciliation layer
+        (not handed the original caller's receipt).
+        """
+        err = validate_payment_id(payment_id)
+        if err:
+            raise ValueError(err)
+        result = dict(outcome or {})
+        if result.get("success") is not True:
+            return  # never cache failures — retries must re-run the facilitator
+        entry: dict[str, Any] = {
+            "payment_id": payment_id,
+            "caller_key": caller_key or "",
+            "success": True,
+            "settled_at": datetime.now(UTC).isoformat(),
+            "result": result,
+        }
+        self._settlements[payment_id] = entry
+        if self._redis is not None:
+            try:
+                import json as _json
+
+                self._redis.setex(
+                    f"coffer:settle:{payment_id}",
+                    self.validity_seconds,
+                    _json.dumps(entry),
+                )
+            except Exception:  # noqa: BLE001, S110 — never break recording on redis
+                pass
+
+    def get_settle_outcome(self, payment_id: str) -> dict[str, Any] | None:
+        """Return the cached successful settlement for a payment id, if any.
+
+        Memory first; on a miss, consult the Redis mirror (restart / multi-
+        instance case) and re-hydrate memory so repeat checks stay local.
+        """
+        if not payment_id:
+            return None
+        if payment_id not in self._settlements and self._redis is not None:
+            try:
+                import json as _json
+
+                raw = self._redis.get(f"coffer:settle:{payment_id}")
+                if raw:
+                    entry = _json.loads(raw)
+                    if entry.get("success") is True:
+                        self._settlements[payment_id] = entry
+            except Exception:  # noqa: BLE001, S110 — mirror is best-effort
+                pass
+        entry = self._settlements.get(payment_id)
+        if entry is None or entry.get("success") is not True:
+            return None
+        return dict(entry)
+
+    # ── liveness ────────────────────────────────────────────────────────────
+
+    def redis_health(self) -> str:
+        """``"ok"`` when the Redis mirror answers a ping, else ``"unavailable"``.
+
+        Memory-only stores (no ``X402_REDIS_URL``) report ``"unavailable"`` —
+        honest liveness: settlement state then does not survive a restart.
+        """
+        if self._redis is None:
+            return "unavailable"
+        try:
+            self._redis.ping()
+            return "ok"
+        except Exception:  # noqa: BLE001 — a dead mirror is degraded, not fatal
+            return "unavailable"
+
+    def health(self) -> dict[str, Any]:
+        """Liveness snapshot: in-memory store + Redis mirror status."""
+        return {
+            "store": "ok",
+            "redis": self.redis_health(),
+            "payments": len(self),
+        }
 
     def __len__(self) -> int:
         return len(self._records)

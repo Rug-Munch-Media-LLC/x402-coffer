@@ -20,6 +20,7 @@ env parsing so the container cannot fail on an undeclared optional package.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -36,6 +37,14 @@ REQUIRED: tuple[str, ...] = ("X402_WALLET",)
 #: ``wallet_configured()`` return False when X402_WALLET was set to the
 #: treasury, refusing to boot a correctly configured deployment.
 _UNCONFIGURED_MARKERS = {"", "coffer-unconfigured-wallet"}
+
+#: Facilitator signing key env vars. The key NEVER lives in code: it is read
+#: from ``X402_SELF_FACILITATOR_KEY`` (env) or, when unset, from the secret
+#: FILE named by ``X402_SELF_FACILITATOR_KEY_FILE``. A deployment that needs
+#: to sign settlements (self-hosted + RPC configured) but has neither fails
+#: fast at boot instead of silently returning ``None`` from every settle.
+SIGNING_KEY_ENV = "X402_SELF_FACILITATOR_KEY"
+SIGNING_KEY_FILE_ENV = "X402_SELF_FACILITATOR_KEY_FILE"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -69,6 +78,7 @@ class X402Settings(BaseModel):
     # ── Self-hosted facilitation / settlement ─────────────────────────────
     self_facilitate: bool = True
     self_facilitator_key: str = ""
+    self_facilitator_key_file: str = ""
     self_facilitator_rpc: str = ""
     offline_mode: bool = False
     redis_url: str = ""
@@ -150,6 +160,28 @@ class X402Settings(BaseModel):
                     return val
             return ""
 
+        def _secret(env_names: tuple[str, ...], file_env: str) -> tuple[str, str]:
+            """Resolve a secret: env var first, then a secret FILE.
+
+            Returns ``(secret_value, file_path)``. Reading a secret from a
+            mounted file (Docker/K8s secret, gopass export) keeps the material
+            out of the process environment and out of git; ``""`` means the
+            secret is unset.
+            """
+            for name in env_names:
+                val = e.get(name, "")
+                if val:
+                    return val, ""
+            file_path = e.get(file_env, "").strip()
+            if not file_path:
+                return "", ""
+            try:
+                return Path(file_path).read_text(encoding="utf-8").strip(), file_path
+            except OSError:
+                return "", file_path
+
+        signing_key, signing_key_file = _secret((SIGNING_KEY_ENV,), SIGNING_KEY_FILE_ENV)
+
         return cls(
             pay_to=g("X402_PAY_TO", "").lower(),
             # Canonical env schema: X402_WALLET (EVM), X402_WALLET_SOLANA,
@@ -168,7 +200,8 @@ class X402Settings(BaseModel):
             tron_pay_to=first("X402_TRON_PAY_TO", "X402_WALLET_TRON").strip(),
             asterpay_sepa_iban=g("ASTERPAY_SEPA_IBAN", "").strip(),
             self_facilitate=_env_bool("X402_SELF_FACILITATE", True),
-            self_facilitator_key=g("X402_SELF_FACILITATOR_KEY", ""),
+            self_facilitator_key=signing_key,
+            self_facilitator_key_file=signing_key_file,
             self_facilitator_rpc=g("X402_SELF_FACILITATOR_RPC", ""),
             offline_mode=_env_bool("X402_OFFLINE_MODE", False),
             redis_url=g("X402_REDIS_URL", g("REDIS_URL", "")),
@@ -224,7 +257,15 @@ class X402Settings(BaseModel):
         return any(str(c).strip().lower() not in _UNCONFIGURED_MARKERS for c in candidates)
 
     def assert_configured(self) -> X402Settings:
-        """Fail closed when no receiving wallet is configured."""
+        """Fail closed when the runtime cannot accept OR settle payments.
+
+        1. A receiving wallet is required (unset wallet -> refuse to boot).
+        2. In production (``debug`` off), a self-hosted deployment that has an
+           RPC configured but NO facilitator signing key fails fast — settle
+           would otherwise silently return ``None`` from every broadcast.
+           The key must come from ``X402_SELF_FACILITATOR_KEY`` or the secret
+           file ``X402_SELF_FACILITATOR_KEY_FILE`` — never from code.
+        """
         missing = [name for name in REQUIRED if not self.wallet_configured]
         if missing:
             raise RuntimeError(
@@ -233,6 +274,20 @@ class X402Settings(BaseModel):
                 "X402_WALLET_SOLANA=<solana base58>. "
                 "Full reference: see .env.example / docs/COFFER-DEPLOY.md "
                 f"[missing/invalid: {', '.join(REQUIRED)}]"
+            )
+        if (
+            not self.debug
+            and self.self_facilitate
+            and not self.offline_mode
+            and bool(self.self_facilitator_rpc.strip())
+            and not self.self_facilitator_key
+        ):
+            raise RuntimeError(
+                "Coffer is configured for self-hosted settlement "
+                f"(X402_SELF_FACILITATOR_RPC={self.self_facilitator_rpc!r}) but the "
+                "facilitator signing key is unset. Set X402_SELF_FACILITATOR_KEY "
+                "or X402_SELF_FACILITATOR_KEY_FILE (secret file) — the key is "
+                "never read from code."
             )
         return self
 
@@ -276,6 +331,7 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
 
     from coffer._engine.extensions import register_all_extensions
     from coffer._engine.middleware import X402Middleware
+    from coffer._engine.router import health_router
     from coffer._engine.router import router as x402_router
 
     # Wire every extension entry point (payment-identifier idempotency,
@@ -288,6 +344,8 @@ def create_app(*args: Any, **kwargs: Any) -> Any:
         version=__version__,
     )
     app.include_router(x402_router)
+    # Liveness probe (store + redis) mounted at the top level /health.
+    app.include_router(health_router)
 
     # Bazaar discovery: browse catalog of declared paid resources.
     from coffer._engine.extensions.bazaar import register_bazaar_router

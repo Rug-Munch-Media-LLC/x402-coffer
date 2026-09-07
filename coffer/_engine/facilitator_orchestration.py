@@ -40,12 +40,66 @@ from .pricing import (
     network_family,
     normalize_network_id,
 )
+from .ratelimit import check_rate
 from .replay import REPLAY_HTTP_STATUS
+from .spending import enforce_spending, get_spending_policy
 
 if TYPE_CHECKING:
     from .facilitator_router import FacilitatorRouter
 
 log = logging.getLogger(__name__)
+
+#: HTTP status for policy denials surfaced by the orchestrator (router maps it
+#: onto an RFC 7807 ``application/problem+json`` response).
+POLICY_DENIED_HTTP_STATUS = 429
+
+
+def _enforce_policies(
+    *,
+    caller_key: str,
+    amount_usd: float | None,
+    asset: str,
+    network_id: str,
+) -> dict[str, Any] | None:
+    """Wire the (previously dead-code) RateLimiter + SpendingPolicy into the
+    verify/settle dispatch.
+
+    Both are caller-attributed; with no caller identity (direct handler calls)
+    they are skipped rather than silently charging the empty key. A denial
+    returns a result fragment carrying ``http_status`` + ``retry_after`` so the
+    HTTP layer can emit a proper 429 problem; ``None`` means allowed.
+    """
+    if not caller_key:
+        return None
+    # RateLimiter: per-caller request velocity on verify AND settle.
+    allowed, retry_after = check_rate(caller_key)
+    if not allowed:
+        return {
+            "http_status": POLICY_DENIED_HTTP_STATUS,
+            "retry_after": retry_after,
+            "reason": "rate limit exceeded",
+        }
+    # SpendingPolicy: value ceiling on the amount accepted for verification.
+    if amount_usd is None or asset is None:
+        return None
+    try:
+        finite = math.isfinite(float(amount_usd)) and float(amount_usd) > 0
+    except (TypeError, ValueError):
+        finite = False
+    if not finite:
+        return None  # the invalid-amount guards below own this rejection
+    try:
+        amount_atomic = asset_to_atomic(float(amount_usd), asset, network_id)
+    except Exception:  # noqa: BLE001 — unquantifiable spend skips the ceiling
+        return None
+    ok, reason = enforce_spending(caller_key, amount_atomic)
+    if not ok:
+        return {
+            "http_status": POLICY_DENIED_HTTP_STATUS,
+            "retry_after": get_spending_policy().window_seconds,
+            "reason": reason,
+        }
+    return None
 
 
 # ── verify ────────────────────────────────────────────────────────────────────
@@ -58,14 +112,33 @@ async def verify(
     network: str,
     asset: str,
     amount_usd: float,
+    caller_key: str = "",
 ) -> dict[str, Any]:
     """Verify a payment with the best available facilitator.
 
     Returns ``{"verified", "reason", "settlement", "facilitator", ...}``.
     Replay-protected: a successfully-verified tx_hash is burned (SETNX,
-    24h TTL) and cannot be reused.
+    24h TTL) and cannot be reused. When ``caller_key`` is supplied the
+    RateLimiter + SpendingPolicy are enforced before any dispatch (policy
+    denials return ``http_status`` 429 + ``retry_after``).
     """
     network_id = normalize_network_id(network)
+
+    # RateLimiter / SpendingPolicy (previously dead code) — enforced per
+    # caller before any facilitator is consulted.
+    denied = _enforce_policies(
+        caller_key=caller_key,
+        amount_usd=amount_usd,
+        asset=asset,
+        network_id=network_id,
+    )
+    if denied is not None:
+        return {
+            "verified": False,
+            "settlement": None,
+            "network": network_id,
+            **denied,
+        }
 
     # Chain activity gauge (fail-safe): 1 = supported network attempted.
     try:
@@ -188,9 +261,25 @@ async def settle(
     network: str,
     asset: str,
     amount_usd: float,
+    caller_key: str = "",
 ) -> dict[str, Any]:
-    """Confirm settlement with the best available facilitator."""
+    """Confirm settlement with the best available facilitator.
+
+    When ``caller_key`` is supplied the RateLimiter is enforced first (policy
+    denials return ``http_status`` 429 + ``retry_after``).
+    """
     network_id = normalize_network_id(network)
+
+    # RateLimiter (previously dead code) — per-caller request velocity.
+    denied = _enforce_policies(
+        caller_key=caller_key,
+        amount_usd=None,  # settle confirms value already capped at verify
+        asset="",
+        network_id="",
+    )
+    if denied is not None:
+        return {"success": False, "payment_id": payment_id, **denied}
+
     if X402_OFFLINE_MODE:
         return {
             "success": True,
