@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any
 
 from ._engine.wallets import (
     CHAIN_INFO,
-    WalletConfig,
     get_configured_chains,
     get_unconfigured_chains,
     load_wallets,
@@ -66,12 +64,12 @@ def cmd_status() -> None:
         print("❌ No wallets configured — cannot accept payments")
     if status["configured"]:
         print("\nConfigured:")
-        for chain, info in status["configured"].items():
+        for info in status["configured"].values():
             v = "✅" if info["valid"] else "❌"
             print(f"  {info['name']:<12} {info['address_masked']:<20} {v}")
     if status["unconfigured"]:
         print("\nUnconfigured:")
-        for chain, info in status["unconfigured"].items():
+        for info in status["unconfigured"].values():
             print(f"  {info['name']:<12} set {info['env_var']}")
     print()
 
@@ -94,7 +92,7 @@ def cmd_init() -> None:
             result = validate_wallet(addr, chain)
             if result["valid"]:
                 env_lines.append(f"{info.env_var}={addr}")
-                print(f"  ✅ Valid")
+                print("  ✅ Valid")
             else:
                 print(f"  ❌ Invalid: {result['error']}")
                 retry = input("  Re-enter or skip [s]: ").strip()
@@ -104,7 +102,7 @@ def cmd_init() -> None:
                         env_lines.append(f"{info.env_var}={retry}")
                         print("  ✅ Valid")
                     else:
-                        print(f"  ❌ Still invalid — skipping")
+                        print("  ❌ Still invalid — skipping")
 
     if env_lines:
         env_path = ".env"
@@ -116,8 +114,7 @@ def cmd_init() -> None:
             if existing and not existing.endswith("\n"):
                 f.write("\n")
             f.write("\n# Coffer wallet configuration\n")
-            for line in env_lines:
-                f.write(line + "\n")
+            f.writelines(line + "\n" for line in env_lines)
         print(f"\n✅ Wrote {len(env_lines)} wallet(s) to {env_path}")
         print("Run: python -m coffer.wallet_cli status")
     else:

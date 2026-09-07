@@ -13,7 +13,7 @@ from coffer._engine.extensions.sign_in_with_x import (
 )
 
 # Test key — deterministic, funded-on-nothing, safe to commit (not a secret).
-TEST_KEY = "0x" + "11" * 32  # noqa: S105
+TEST_KEY = "0x" + "11" * 32
 DOMAIN = "d.test"
 
 

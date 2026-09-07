@@ -48,4 +48,5 @@ def test_v1_body_advertises_testnet_when_priced() -> None:
     body = build_payment_required("op", multi_asset=True)
     nets = {o["network"] for o in body["accepts"]}
     if X402_NETWORK_WALLETS.get("eip155:11155111"):
-        assert "eip155:11155111" in nets or True  # honest-absent allowed when unpriced
+        # With a wallet configured, priced testnet USDC is advertised like mainnet rows.
+        assert "eip155:11155111" in nets

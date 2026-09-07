@@ -33,10 +33,10 @@ for _p in (f"{_REPO_ROOT}/vendor", _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from coffer._engine import external_verify  # noqa: E402
-from coffer._engine.facilitator_config import FacilitatorConfig  # noqa: E402
-from coffer._engine.facilitator_router import FacilitatorRouter  # noqa: E402
-from coffer._engine.solana_verifier import (  # noqa: E402
+from coffer._engine import external_verify
+from coffer._engine.facilitator_config import FacilitatorConfig
+from coffer._engine.facilitator_router import FacilitatorRouter
+from coffer._engine.solana_verifier import (
     SOLANA_USDC_MINT,
     SOLANA_USDT_MINT,
     SPL_TOKEN_PROGRAM_ID,

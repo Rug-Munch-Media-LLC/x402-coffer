@@ -15,17 +15,17 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 __all__ = [
-    "WalletConfig",
     "CHAIN_INFO",
-    "load_wallets",
-    "validate_wallet",
-    "mask_wallet",
+    "WalletConfig",
     "get_configured_chains",
     "get_unconfigured_chains",
+    "load_wallets",
+    "mask_wallet",
+    "validate_wallet",
     "wallet_status",
 ]
 
@@ -137,15 +137,14 @@ def validate_wallet(address: str, chain: str) -> dict[str, Any]:
         try:
             from eth_utils import is_checksum_address  # type: ignore
 
-            if not is_checksum_address(addr):
-                # Not all addresses are checksummed — only flag if mixed case
-                if addr != addr.lower() and addr != addr.upper():
-                    return {
-                        "valid": False,
-                        "chain": chain,
-                        "address": address,
-                        "error": "invalid EIP-55 checksum",
-                    }
+            # Not all addresses are checksummed — only flag if mixed case
+            if not is_checksum_address(addr) and addr != addr.lower() and addr != addr.upper():
+                return {
+                    "valid": False,
+                    "chain": chain,
+                    "address": address,
+                    "error": "invalid EIP-55 checksum",
+                }
         except ImportError:
             pass  # eth_utils not installed — format check is sufficient
         return {"valid": True, "chain": chain, "address": addr, "error": None}

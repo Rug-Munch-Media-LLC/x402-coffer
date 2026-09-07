@@ -5,21 +5,16 @@ from __future__ import annotations
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from coffer._engine.wallets import (
     CHAIN_INFO,
     WalletConfig,
     load_wallets,
-    validate_wallet,
     mask_wallet,
-    get_configured_chains,
-    get_unconfigured_chains,
+    validate_wallet,
     wallet_status,
 )
-
 
 # ── Address validation ────────────────────────────────────────────────────────
 
@@ -48,7 +43,8 @@ class TestValidateWallet:
         assert result["valid"] is False
 
     def test_valid_tron(self):
-        result = validate_wallet("TJRyWw8tmq4oG6jYm2aQ9n8p2s5t7u9v1w3x5y7z", "tron")
+        # Real TRON mainnet address (base58check, exactly 34 chars: T + 33).
+        result = validate_wallet("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "tron")
         assert result["valid"] is True
 
     def test_invalid_tron_no_t(self):

@@ -15,7 +15,7 @@ import pytest
 from coffer._engine.self_facilitator import SelfFacilitator
 
 # Deterministic test key (funded-on-nothing; safe to commit — not a secret).
-PAYER_KEY = "0x" + "33" * 32  # noqa: S105
+PAYER_KEY = "0x" + "33" * 32
 
 BASE = "eip155:8453"
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"

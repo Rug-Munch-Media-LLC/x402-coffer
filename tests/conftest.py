@@ -59,17 +59,17 @@ for _p in (_VENDOR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import httpx  # noqa: E402  (imports must follow the sys.path fix below)
-import pytest  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
+import httpx
+import pytest
+from fastapi import FastAPI
 
-from coffer._engine.middleware import (  # noqa: E402
+from coffer._engine.middleware import (
     X402Middleware,
     get_default_store,
     set_default_store,
 )
-from coffer._engine.router import router as x402_router  # noqa: E402
-from coffer._engine.service import (  # noqa: E402
+from coffer._engine.router import router as x402_router
+from coffer._engine.service import (
     FacilitatorRouter,
     asset_to_atomic,
     set_facilitator_router,

@@ -14,9 +14,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .wallets import (
-    CHAIN_INFO,
     load_wallets,
-    mask_wallet,
     validate_wallet,
     wallet_status,
 )

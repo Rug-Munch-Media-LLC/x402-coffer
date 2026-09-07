@@ -16,7 +16,7 @@ class _FakeFlaskApp:
     def __init__(self) -> None:
         self.wsgi_app = self._serve
 
-    def _serve(self, environ, start_response):  # noqa: ANN001
+    def _serve(self, environ, start_response):
         body = b'{"ok": true}'
         start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
         return [body]
@@ -36,7 +36,7 @@ def _environ(path: str = "/paid", payment_id: str = "", remote_addr: str = "1.2.
 def _run(gate: Flask402Gate, environ: dict) -> tuple[int, dict, bytes]:
     status_headers: list = []
 
-    def start_response(status, headers):  # noqa: ANN001
+    def start_response(status, headers):
         status_headers.append((status, headers))
 
     body = b"".join(gate(environ, start_response))

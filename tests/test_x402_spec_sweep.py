@@ -32,7 +32,7 @@ async def test_v1_conformance_sweep(app):  # type: ignore[no-untyped-def]
     assert r.status_code == 402
     assert r.headers.get("x-payment-required") == "true"
     assert r.headers.get("x-payment-options") == "x402"
-    assert "payment-required" in {k.lower() for k in r.headers.keys()}
+    assert "payment-required" in {k.lower() for k in r.headers}
     assert r.headers.get("content-type", "").startswith("application/json")
     # ── body ↔ header agreement ──
     body = r.json()
