@@ -13,15 +13,34 @@ import math
 import os
 import re
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from typing import Any
 
 __all__ = [
     "PAYMENT_VALIDITY_SECONDS",
+    "PaymentStatus",
     "PaymentStore",
     "get_default_store",
     "set_default_store",
     "validate_payment_id",
 ]
+
+
+class PaymentStatus(str, Enum):
+    """Lifecycle of a payment record (audit #73).
+
+    Transitions are strictly forward: VERIFY → SETTLE → FINALIZED.
+
+    - ``VERIFIED``: server-confirmed payment proof (record()).
+    - ``SETTLED``: a facilitator reported success (in-flight confirmation).
+    - ``FINALIZED``: settlement outcome persisted on-chain-confirmed
+      (record_settle_outcome success). Terminal — no further verify/settle.
+    """
+
+    VERIFIED = "VERIFIED"
+    SETTLED = "SETTLED"
+    FINALIZED = "FINALIZED"
+
 
 #: TTL for verified payment ids (mirrors x402-py ``PAYMENT_VALIDITY_SECONDS``;
 #: env ``X402_PAYMENT_TTL`` overrides).
@@ -111,6 +130,14 @@ class PaymentStore:
         err = validate_payment_id(payment_id)
         if err:
             raise ValueError(err)
+        existing = self._records.get(payment_id)
+        # Audit #73: a FINALIZED commitment is terminal — a re-verify of a
+        # settled+finalized payment id is rejected outright (fail closed).
+        if existing is not None and existing.get("status") == PaymentStatus.FINALIZED:
+            raise ValueError(
+                f"payment {payment_id} is FINALIZED; verify is rejected "
+                "(finalized commitments are immutable)"
+            )
         self._records[payment_id] = {
             "payment_id": payment_id,
             "tx_hash": tx_hash,
@@ -120,6 +147,7 @@ class PaymentStore:
             "facilitator": facilitator,
             "verified": verified,
             "caller_key": caller_key or "",
+            "status": PaymentStatus.VERIFIED,
             "expires_at": (datetime.now(UTC) + timedelta(seconds=self.validity_seconds)).isoformat(),
             "verified_at": datetime.now(UTC).isoformat(),
         }
@@ -214,6 +242,10 @@ class PaymentStore:
             "result": result,
         }
         self._settlements[payment_id] = entry
+        # Audit #73: a persisted successful settlement outcome means the
+        # settle was confirmed — drive the record to FINALIZED.
+        self.mark_settled(payment_id)
+        self.finalize(payment_id)
         if self._redis is not None:
             try:
                 import json as _json
@@ -225,6 +257,32 @@ class PaymentStore:
                 )
             except Exception:  # noqa: BLE001, S110 — never break recording on redis
                 pass
+
+    def mark_settled(self, payment_id: str) -> bool:
+        """Transition VERIFIED → SETTLED (facilitator reported success).
+
+        Returns False (no-op) when the record is missing or already FINALIZED.
+        """
+        rec = self._records.get(payment_id)
+        if rec is None or rec.get("status") == PaymentStatus.FINALIZED:
+            return False
+        rec["status"] = PaymentStatus.SETTLED
+        return True
+
+    def finalize(self, payment_id: str) -> bool:
+        """Transition SETTLED → FINALIZED (audit #73).
+
+        Only callable after a settle was confirmed; a VERIFIED record that was
+        never settled cannot be finalized (transition rejected). Terminal:
+        after finalize, ``record()`` re-verify raises and settle replays only.
+        """
+        rec = self._records.get(payment_id)
+        if rec is None:
+            return False
+        if rec.get("status") != PaymentStatus.SETTLED:
+            return False
+        rec["status"] = PaymentStatus.FINALIZED
+        return True
 
     def get_settle_outcome(self, payment_id: str) -> dict[str, Any] | None:
         """Return the cached successful settlement for a payment id, if any.

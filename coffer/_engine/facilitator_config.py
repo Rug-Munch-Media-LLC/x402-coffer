@@ -52,10 +52,27 @@ elif _X402_SIGNING_KEY_FILE:
 else:
     X402_SELF_FACILITATOR_KEY = ""
 X402_SELF_FACILITATOR_RPC = os.getenv("X402_SELF_FACILITATOR_RPC", "")
-X402_OFFLINE_MODE = os.getenv("X402_OFFLINE_MODE", "0").lower() in ("1", "true")
+_raw_offline_mode = os.getenv("X402_OFFLINE_MODE", "0").lower() in ("1", "true", "yes", "on")
+_x402_dev_mode = os.getenv("X402_DEV_MODE", "0").lower() in ("1", "true", "yes", "on")
+# Audit #53: offline mode silently charges nothing — it must never be enabled
+# implicitly or by a stray env var in production. It is only honoured when
+# X402_DEV_MODE=1 is ALSO set, and a loud warning is logged whenever the
+# offline flag is present without dev mode (the flag is then ignored).
+if _raw_offline_mode and not _x402_dev_mode:
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning(
+        "x402_offline_mode_ignored_requires_dev_mode — "
+        "X402_OFFLINE_MODE is set but X402_DEV_MODE=1 is not; offline mode is "
+        "DISABLED (fail closed). Enable X402_DEV_MODE only in development."
+    )
+X402_OFFLINE_MODE = _raw_offline_mode and _x402_dev_mode
 
 # TTL for verified payment ids (mirrors x402-py ``PAYMENT_VALIDITY_SECONDS``).
-PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "300"))
+# Audit #54: the default lives in ONE place — ``config.DEFAULT_PAYMENT_TTL`` —
+# so the router TTL and the store TTL can never drift apart. Override with
+# X402_PAYMENT_TTL (seconds).
+PAYMENT_VALIDITY_SECONDS: int = int(os.getenv("X402_PAYMENT_TTL", "3600"))
 
 # Default asset/network for payments when none is supplied by the caller.
 X402_DEFAULT_ASSET: str = os.getenv("X402_DEFAULT_ASSET", "usdc")

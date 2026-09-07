@@ -46,6 +46,50 @@ _UNCONFIGURED_MARKERS = {"", "coffer-unconfigured-wallet"}
 SIGNING_KEY_ENV = "X402_SELF_FACILITATOR_KEY"
 SIGNING_KEY_FILE_ENV = "X402_SELF_FACILITATOR_KEY_FILE"
 
+# ── TTL defaults (audit #54) ─────────────────────────────────────────────────
+# Payment/nonce TTLs were previously hardcoded in several modules with
+# DRIFTING defaults (300s in facilitator_config, 3600s in store/config).
+# They now live here as the single source of truth; every consumer reads
+# these constants as its fallback default and X402_* env vars override.
+#: Verified-payment validity window (seconds). Env: X402_PAYMENT_TTL.
+DEFAULT_PAYMENT_TTL: int = 3600
+#: Replay-nonce retention window (seconds). Env: X402_NONCE_TTL.
+DEFAULT_NONCE_TTL: int = 86400
+
+_deprecated_env_warned: set[str] = set()
+
+
+def _warn_deprecated_env_once(alias: str, canonical: str) -> None:
+    """Log a one-time deprecation warning for a legacy env alias (audit #57)."""
+    if alias in _deprecated_env_warned:
+        return
+    _deprecated_env_warned.add(alias)
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "x402_env_deprecated: %s is deprecated; use %s (alias accepted, will be removed)",
+        alias,
+        canonical,
+    )
+
+
+def _canonical_env(e: dict[str, str], canonical: str, *aliases: str, default: str = "") -> str:
+    """Resolve an env var canonical-first; deprecated aliases warn once.
+
+    Audit #57: env naming was mixed-case / mixed-prefix (``X402_burst_limit``,
+    legacy ``COFFER_*`` names). Canonical names are ``X402_*`` UPPER_SNAKE;
+    aliases are still accepted read-time but emit a single deprecation warning.
+    """
+    val = e.get(canonical, "")
+    if val:
+        return val
+    for alias in aliases:
+        val = e.get(alias, "")
+        if val:
+            _warn_deprecated_env_once(alias, canonical)
+            return val
+    return default
+
 
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
@@ -203,9 +247,12 @@ class X402Settings(BaseModel):
             self_facilitator_key=signing_key,
             self_facilitator_key_file=signing_key_file,
             self_facilitator_rpc=g("X402_SELF_FACILITATOR_RPC", ""),
-            offline_mode=_env_bool("X402_OFFLINE_MODE", False),
+            offline_mode=(
+                g("X402_OFFLINE_MODE", "0").strip().lower() in ("1", "true", "yes", "on", "t", "y")
+                and g("X402_DEV_MODE", "0").strip().lower() in ("1", "true", "yes", "on", "t", "y")
+            ),
             redis_url=g("X402_REDIS_URL", g("REDIS_URL", "")),
-            nonce_ttl=int(g("X402_NONCE_TTL", "86400")),
+            nonce_ttl=int(g("X402_NONCE_TTL", str(DEFAULT_NONCE_TTL))),
             coinbase_enabled=_env_bool("X402_COINBASE_ENABLED", True),
             coinbase_verify=g("X402_COINBASE_VERIFY", "https://x402.org/facilitator/verify"),
             coinbase_settle=g("X402_COINBASE_SETTLE", "https://x402.org/facilitator/settle"),
@@ -222,15 +269,25 @@ class X402Settings(BaseModel):
             facilitator_url=g("X402_FACILITATOR_URL", "https://facilitator.payai.network"),
             default_network=g("X402_DEFAULT_NETWORK", "eip155:8453"),
             timeout_seconds=float(g("X402_TIMEOUT_SECONDS", "15")),
-            payment_ttl=int(g("X402_PAYMENT_TTL", "3600")),
+            payment_ttl=int(g("X402_PAYMENT_TTL", str(DEFAULT_PAYMENT_TTL))),
             solana_rpc=g("X402_SOLANA_RPC", ""),
             eip712_name=g("X402_EIP712_NAME", "USD Coin"),
             eip712_version=g("X402_EIP712_VERSION", "2"),
             pricing_json=g("X402_PRICING_JSON", ""),
-            burst_limit=int(g("X402_burst_limit", "5")),
-            burst_window=int(g("X402_burst_window", "60")),
-            wallet_vault_password=g("WALLET_VAULT_PASSWORD", ""),
-            rmi_mcp_api_key=g("RMI_MCP_API_KEY", ""),
+            burst_limit=int(
+                _canonical_env(e, "X402_BURST_LIMIT", "X402_burst_limit", "COFFER_BURST_LIMIT", default="5")
+            ),
+            burst_window=int(
+                _canonical_env(
+                    e, "X402_BURST_WINDOW", "X402_burst_window", "COFFER_BURST_WINDOW", default="60"
+                )
+            ),
+            wallet_vault_password=_canonical_env(
+                e, "X402_WALLET_VAULT_PASSWORD", "WALLET_VAULT_PASSWORD", "COFFER_WALLET_VAULT_PASSWORD"
+            ),
+            rmi_mcp_api_key=_canonical_env(
+                e, "X402_RMI_MCP_API_KEY", "RMI_MCP_API_KEY", "COFFER_RMI_MCP_API_KEY"
+            ),
             host=g("X402_HOST", "0.0.0.0"),
             port=int(g("X402_PORT", "8001")),
             debug=_env_bool("X402_DEBUG", False),

@@ -59,6 +59,14 @@ for _p in (_VENDOR, _REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+# ── Canonical test wallet env (audit #57) ──────────────────────────────────
+# The accepts/offer surface and readiness signals read X402_WALLET at module
+# import time. Set the canonical fallback here (before any coffer import) so
+# the whole suite runs with a configured receiving wallet. setdefault keeps any
+# explicitly-provided env intact. Per-network X402_WALLET_* are intentionally
+# NOT set here so wallet-config tests (test_wallets.py) keep a clean env.
+os.environ.setdefault("X402_WALLET", "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18")
+
 import httpx
 import pytest
 from fastapi import FastAPI

@@ -54,6 +54,42 @@ log = logging.getLogger(__name__)
 POLICY_DENIED_HTTP_STATUS = 429
 
 
+def _resolve_quote(amount_usd: float, asset: str, network_id: str) -> tuple[int | None, str]:
+    """Single source of truth for the atomic amount quote (audit #62).
+
+    Previously the atomic conversion was computed independently in the
+    spending policy, the verify path and the settle payload — three chances
+    for the quoted amount to drift from what was verified. Every path now
+    resolves through this one function.
+
+    Returns ``(atomic_amount_or_None, reason)``. ``None`` means the
+    (asset, network) pair is unquotable — callers fail closed.
+    """
+    try:
+        return asset_to_atomic(float(amount_usd), asset, network_id), ""
+    except Exception as e:  # noqa: BLE001 — unquotable -> fail closed
+        return None, str(e)
+
+
+def _assert_quote_consistency(verify_atomic: int | None, settle_atomic: int | None, payment_id: str) -> str:
+    """Assert the settle quote matches the verified quote (audit #62).
+
+    Returns an error reason when the amounts disagree (the settle must be
+    refused rather than broadcast with a different amount than was verified).
+    """
+    if verify_atomic is None or settle_atomic is None:
+        return ""
+    if verify_atomic != settle_atomic:
+        log.error(
+            "x402_quote_mismatch payment_id=%s verify_atomic=%s settle_atomic=%s",
+            payment_id,
+            verify_atomic,
+            settle_atomic,
+        )
+        return f"quote mismatch: verified {verify_atomic} != settle {settle_atomic} atomic"
+    return ""
+
+
 def _enforce_policies(
     *,
     caller_key: str,
@@ -89,8 +125,10 @@ def _enforce_policies(
     if not finite:
         return None  # the invalid-amount guards below own this rejection
     try:
-        amount_atomic = asset_to_atomic(float(amount_usd), asset, network_id)
+        amount_atomic = _resolve_quote(float(amount_usd), asset, network_id)[0]
     except Exception:  # noqa: BLE001 — unquantifiable spend skips the ceiling
+        amount_atomic = None
+    if amount_atomic is None:
         return None
     ok, reason = enforce_spending(caller_key, amount_atomic)
     if not ok:
@@ -178,7 +216,12 @@ async def verify(
                 "network": network_id,
                 "http_status": REPLAY_HTTP_STATUS,
             }
-        return {"verified": True, "reason": "offline_mode", "settlement": None}
+        return {
+            "verified": True,
+            "reason": "offline_mode",
+            "settlement": None,
+            "amount_atomic": _resolve_quote(amount_usd, asset, network_id)[0],
+        }
 
     # TRON: real TRC-20 verifier (no longer scaffolded).
     if network_family(network_id) == "tron":
@@ -302,7 +345,7 @@ async def settle(
         "transactionHash": tx_hash,
         "network": network_id,
         "asset": asset,
-        "amount": str(asset_to_atomic(amount_usd, asset, network_id)),
+        "amount": str(_resolve_quote(amount_usd, asset, network_id)[0]),
         "payToAddress": X402_NETWORK_WALLETS.get(network_id) or X402_WALLET,
         "scheme": "exact",
         "timestamp": datetime.now(UTC).isoformat(),

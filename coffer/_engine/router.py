@@ -31,6 +31,7 @@ registered per-network facilitators and the replay-nonce store are shared.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -304,11 +305,13 @@ async def verify(request: Request) -> JSONResponse:
             )
 
             identity = extract_agent_identity(payload)
-            get_agent_registry().record_payment(
-                wallet=str(result.get("signer") or payload.get("payer") or payment_id),
-                identity=identity,
-                amount_atomic=int(result.get("amount_atomic", 0) or 0),
-            )
+            payer = _trusted_payer(request, result)
+            if payer:
+                get_agent_registry().record_payment(
+                    wallet=payer,
+                    identity=identity,
+                    amount_atomic=int(result.get("amount_atomic", 0) or 0),
+                )
         except Exception:  # noqa: BLE001, S110 — attribution never breaks verification
             pass
 
@@ -504,3 +507,32 @@ def _int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+# Audit #61: the payer wallet used for attribution must NEVER come from the
+# client-asserted payload (``payload["payer"]`` is trivially spoofable). It is
+# taken from a TRUSTED PROXY header set only, and only when the deployment
+# declares a trusted proxy (X402_TRUSTED_PROXY=1). The address is validated
+# (0x + 40 hex chars) before it is ever recorded or used for signing.
+_TRUSTED_PROXY_HEADERS = ("x-payer", "x-forwarded-payer")
+_EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def _trusted_payer(request: Request, result: dict[str, Any]) -> str:
+    """Resolve the payer address from trusted sources only.
+
+    Priority: server-verified ``signer`` from the facilitator result, then a
+    trusted-proxy header (only when X402_TRUSTED_PROXY=1 and the value is a
+    well-formed EVM address). Client-asserted payload fields are ignored.
+    """
+    signer = str(result.get("signer") or "").strip()
+    if signer and _EVM_ADDRESS_RE.fullmatch(signer):
+        return signer
+    import os as _os
+
+    if _os.getenv("X402_TRUSTED_PROXY", "").lower() in ("1", "true", "yes", "on"):
+        for header in _TRUSTED_PROXY_HEADERS:
+            raw = str(request.headers.get(header) or "").strip()
+            if raw and _EVM_ADDRESS_RE.fullmatch(raw):
+                return raw
+    return ""
