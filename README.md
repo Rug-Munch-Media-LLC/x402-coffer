@@ -2,55 +2,84 @@
   <img src="https://img.shields.io/badge/coffer-x402%20facilitator-2ea44f?style=for-the-badge" alt="Coffer" />
 </p>
 
-<h1 align="center">Coffer — The Sovereign x402 Payment Facilitator</h1>
+<h1 align="center">Coffer — x402 Multichain Payment Facilitator</h1>
 
 <p align="center">
-  <strong>Pay-per-request HTTP for the multi-chain economy.</strong><br/>
-  Coffer is a self-hosted, open-source payment gateway designed for AI agents and microservices. It enables seamless, pay-per-request access to APIs and tools across EVM, Solana, and TRON. By removing reliance on centralized custodians, Coffer provides true sovereignty for the agentic economy.
+  <strong>The open-source facilitator for x402 payments — quote, verify, settle across EVM, Solana, and more.</strong><br/>
+  Coffer is a self-hosted payment facilitator for the x402 protocol: it turns any HTTP resource into a
+  pay-per-request endpoint using crypto micropayments. When a client hits a protected route, Coffer
+  returns an <code>HTTP 402</code> quote, verifies the client's on-chain payment, and settles —
+  non-custodially, on your own infrastructure. Built for AI agents, MCP servers, and APIs selling
+  data or work.
 </p>
 
 <p align="center">
   <a href="https://git.rugmunch.io/RugMunchMedia/x402-coffer/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" /></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue" /></a>
-  <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/badge/code%20style-ruff-000000" /></a>
   <a href="https://www.x402.org/"><img src="https://img.shields.io/badge/x402-v2%20spec-2ea44f" /></a>
 </p>
 
 ---
 
-## Why Coffer
+## What Coffer Does
 
-Unlike centralized payment providers, Coffer is built for developers who demand control, privacy, and multi-chain interoperability.
+Coffer implements the x402 payment flow end to end: **quote → verify → settle**.
 
-*   **Sovereign & Self-Hosted:** You own the infrastructure. No third-party visibility into your transaction volume or customer data.
-*   **Zero Custodial Risk:** Non-custodial by design. Funds move directly from buyer to seller via on-chain transfers.
-*   **Multi-Chain Native:** Support for 6 major networks (EVM×5, Solana, TRON) and 25+ assets out of the box.
-*   **MCP Native:** Includes a built-in Model Context Protocol (MCP) server, allowing AI agents to discover and pay for tools automatically.
-*   **No Coinbase Dependency:** While it can route to external facilitators, Coffer is fully functional as a standalone, self-hosted settlement engine.
-*   **Developer First:** One-line Python decorators and a robust REST/MCP dual interface.
+1. **Quote** — a client requests a protected resource; Coffer answers with `HTTP 402 Payment Required` and a machine-readable payment payload (price, network, asset, pay-to address).
+2. **Verify** — the client pays on-chain and retries with a payment signature; Coffer validates it against the chain (EIP-3009/EIP-7702 on EVM, SPL `transferChecked` on Solana, TRC-20 on TRON).
+3. **Settle** — Coffer settles idempotently, issues a replayable `X-Payment-ID`, and returns the resource with a `PAYMENT-RESPONSE` receipt.
 
----
+### Current Capabilities
+
+- **RFC 7807 errors** — every denial (rate limit, spending policy, replay, reconciliation conflict) is a structured `application/problem+json` response, never a bare string.
+- **Idempotent settle with replay check** — settlement is keyed by payment ID; replays short-circuit via `X-Payment-ID` (caller-bound, TTL'd) so a signature can never be spent twice.
+- **Rate limiting + spending policy** — per-caller request caps (per minute/day) and value caps (per window), enforced before any chain contact.
+- **Billing ledger** — JSONL audit ledger (`settlements.jsonl`, `payments.jsonl`) with `/v1/billing/history` and `/v1/billing/balance` endpoints, attributed to the verified caller key only.
+- **Merchant and payer modes** — run Coffer as the resource server's facilitator (merchant side) or as a self-facilitator that signs payments on behalf of an agent (payer side).
+- **Self-facilitator signing** — point an agent at Coffer with `X402_SELF_FACILITATOR_KEY` (or `X402_SELF_FACILITATOR_KEY_FILE`) and it signs and routes payments without any external custodian.
+- **`/health`** — liveness endpoint for orchestrators and load balancers.
+
+## Who It's For
+
+- **MCP servers** selling tool calls to agents — one decorator turns any tool into a paid endpoint.
+- **API providers** monetizing data endpoints with crypto micropayments instead of API keys and invoices.
+- **Autonomous agents** that need to *pay* other agents — Coffer's self-facilitator mode signs payments so agents can consume paid x402 resources.
+
+## Architecture
+
+```text
+ ┌──────────────────────┐         ┌─────────────────────────────┐
+ │  Actors              │         │  Coffer (self-hosted)       │
+ │  ─ AI agent / MCP    │  402    │  ─────────────────────────  │
+ │    client            │◄────────┤  quote → verify → settle    │
+ │  ─ Resource server   │  pay    │  rate limit + spending      │
+ │    (your API)        │────────►│  replay check + ledger      │
+ └──────────────────────┘  retry  └──────────┬──────────────────┘
+                                             │ verify / settle
+                          ┌──────────────────┼──────────────────┐
+                          ▼                  ▼                  ▼
+                    ┌───────────┐     ┌───────────┐      ┌───────────┐
+                    │ EVM       │     │ Solana    │      │ TRON      │
+                    │ Base, ETH,│     │ SPL       │      │ TRC-20    │
+                    │ Arbitrum, │     │ transfer  │      │ USDT/TRX  │
+                    │ OP, Poly  │     │ Checked   │      │           │
+                    └───────────┘     └───────────┘      └───────────┘
+```
 
 ## Quick Start
-
-### Installation
 
 ```bash
 pip install x402-coffer
 ```
 
-### Basic Usage
-
-Set your receiving wallet via environment variables:
+### Merchant side (resource server)
 
 ```bash
 export X402_WALLET="0xYourEVMAddress"
-# For Solana: export X402_WALLET_SOLANA="YourSolanaAddress"
-# For TRON: export X402_WALLET_TRON="YourTronAddress"
+# Solana: export X402_WALLET_SOLANA="YourSolanaAddress"
+# TRON:   export X402_WALLET_TRON="YourTronAddress"
 ```
-
-Implement a paywall in your FastAPI application:
 
 ```python
 from coffer import require_payment
@@ -61,85 +90,30 @@ async def premium_endpoint(request):
     return {"status": "success", "data": "Access granted!"}
 ```
 
----
+### Payer side (agent / consumer)
 
-## Architecture
+Point your client at a facilitator — Coffer's own, or any external one:
 
-Coffer's settlement engine is modular by design. Large modules are split into focused, single-responsibility files behind a thin facade, so the public API stays stable while internals stay readable:
-
-*   **`coffer/_engine/solana_verifier.py`** — thin facade over four focused modules:
-    *   `solana_constants.py` — chain constants, limits, and configuration
-    *   `solana_parse.py` — transaction/instruction parsing
-    *   `solana_result.py` — verification result types
-    *   `solana_transfer.py` — SPL transfer verification logic
-*   **`coffer/_engine/models.py`** — thin facade over three focused modules:
-    *   `models_payment.py` — payment request/authorization models
-    *   `models_settlement.py` — settlement and receipt models
-    *   `models_response.py` — verify/settle response models
-
-All modules are kept under 400 lines using the thin facade pattern throughout.
-
----
-
-## Parity with Pry
-
-Coffer's built-in facilitator matches pry's self-facilitator in verification capabilities:
-
-*   **EVM:** EIP-3009 (transferWithAuthorization) and EIP-7702 verification
-*   **Solana:** SPL `transferChecked` on-chain verification with payer binding
-*   **TRON:** TRC-20 verification scaffolded
-
----
-
-## How It Works
-
-Coffer implements the x402 specification to bridge HTTP requests with on-chain settlement.
-
-```text
-Client (AI Agent / Browser)        Your Server (Coffer)
-  │                                    │
-  │  1. GET /resource                  │
-  ├───────────────────────────────────►│
-  │                                    │
-  │  2. HTTP 402 Payment Required      │
-  │     PAYMENT-REQUIRED: <payload>    │   ← price, network, asset, payTo
-  │◄───────────────────────────────────┤
-  │                                    │
-  │  3. (Client signs & sends payment)│
-  │                                    │
-  │  4. GET /resource                  │
-  │     PAYMENT-SIGNATURE: <payload>  │
-  ├───────────────────────────────────►│
-  │                                    │
-  │  5. [ Internal Verification ]      │
-  │     - Check on-chain transaction  │
-  │     - Validate signature/nonce    │
-  │                                    │
-  │  6. HTTP 200 OK                    │
-  │     PAYMENT-RESPONSE: <receipt>   │   ← settlement confirmation
-  │◄───────────────────────────────────┤
+```bash
+export X402_FACILITATOR_URL="https://your-coffer.example.com"
 ```
 
-1.  **Request:** The client attempts to access a protected resource.
-2.  **Challenge:** Coffer intercepts the request and returns an `HTTP 402` with the required payment details.
-3.  **Settlement:** The client executes the transaction on-chain. Coffer verifies the transaction and grants access.
+Or let an agent sign its own payments via the self-facilitator:
 
----
+```bash
+export X402_SELF_FACILITATOR_KEY="<signing key>"        # or:
+export X402_SELF_FACILITATOR_KEY_FILE="/path/to/key"    # preferred for deployments
+```
 
-## Security
+See [docs/integration.md](docs/integration.md) for full resource-server integration, including real consumer examples from `rmi-mcp-x402` and `walletpress`.
 
-Coffer is engineered for high-stakes production environments with a "fail-closed" philosophy.
+## Documentation
 
-*   **Fail-Closed Pricing:** All client-provided amounts are validated against authoritative server-side oracles.
-*   **Operation Gating:** Payments are cryptographically bound to specific operations to prevent reuse for different services.
-*   **Settlement Idempotency:** Prevents double-spending and duplicate settlement via strict nonce and transaction hash tracking.
-*   **FSYNC Durability:** Payment records are persisted with high durability to prevent state loss during crashes.
-*   **Thread-Safe Execution:** Internal state management uses robust locking to prevent race conditions during high-concurrency verification.
-*   **SSRF Guard:** Strict validation of all callback and webhook URLs to prevent Server-Side Request Forgery.
-*   **Replay Protection:** Combines TTL (Time-To-Live) and caller binding to ensure a signature cannot be reused.
-*   **HMAC Webhooks:** Secure, signed notifications for all payment events.
-
----
+- [x402 Spec Compliance](docs/x402-spec-compliance.md) — how Coffer implements the x402 protocol flow
+- [Integration Guide](docs/integration.md) — wiring a resource server or agent to Coffer
+- [Security Model](docs/security-model.md) — fail-closed design, signing keys, replay protection
+- [Architecture Deep Dive](ARCHITECTURE.md)
+- [Deployment](docs/COFFER-DEPLOY.md) · [FAQ](docs/FAQ.md) · [Security Policy](SECURITY.md)
 
 ## Networks
 
@@ -153,8 +127,6 @@ Coffer is engineered for high-stakes production environments with a "fail-closed
 | **Solana** | `solana:mainnet` | USDC, USDT, SOL | SPL RPC Verification |
 | **TRON** | `tron:mainnet` | USDT, TRX | TRC-20 Grid Verification |
 
----
-
 ## Configuration
 
 Configuration is managed via environment variables with the `X402_` prefix.
@@ -163,37 +135,27 @@ Configuration is managed via environment variables with the `X402_` prefix.
 | :--- | :--- |
 | `X402_WALLET` | Primary receiving EVM address. |
 | `X402_NETWORK` | Default network (e.g., `base`, `ethereum`, `solana`). |
-| `X402_FACILITATOR_URL` | URL for external facilitator routing (optional). |
+| `X402_FACILITATOR_URL` | Facilitator endpoint for consumers/agents (optional; defaults to an external facilitator). |
+| `X402_SELF_FACILITATOR_KEY` | Signing key for self-facilitator (payer) mode. |
+| `X402_SELF_FACILITATOR_KEY_FILE` | Secret file holding the signing key — preferred over the env var. |
 | `REDIS_URL` | Connection string for the payment nonce/replay store. |
 | `X402_OFFLINE_MODE` | Enable for testing without real on-chain verification. |
 
----
+## Why Coffer
 
-## Comparison
-
-| Feature | Coffer | Coinbase CDP | PayAI | Fireblocks | Mogami |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Open Source (MIT)** | ✅ | ❌ | ❌ | ✅ | ✅ |
-| **Self-Hosted** | ✅ | ❌ | ❌ | ⚠️ Vault | ⚠️ Base-only |
-| **Multi-Chain (6+)** | ✅ | 1 | Multi | Multi | 1 |
-| **MCP Native** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Sovereign Settlement** | ✅ | ❌ | ❌ | ❌ | ❌ |
-
----
+- **Open source (MIT) and self-hosted** — you own the payment facilitator; no third party sees your volume or customers.
+- **Non-custodial** — funds move directly from payer to merchant via on-chain transfers.
+- **Multichain** — 7 networks and 25+ assets out of the box.
+- **Agent-native** — MCP server included; agents discover and pay for tools automatically.
+- **No vendor lock-in** — route to external facilitators or settle entirely on your own.
 
 ## Links
 
-*   [Documentation](https://docs.rugmunch.io/x402-coffer)
-*   [Architecture Deep Dive](ARCHITECTURE.md)
-*   [Security Policy](SECURITY.md)
-*   [FAQ](FAQ.md)
+- [Documentation](https://docs.rugmunch.io/x402-coffer)
+- [x402 specification](https://www.x402.org/)
 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://rugmunch.io">Rug Munch Media LLC</a> — sovereign payments for the agentic economy.</sub>
-</p>
-
-<p align="center">
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue" /></a>
+  <sub>Built by <a href="https://rugmunch.io">Rug Munch Media LLC</a> — open-source payments for the agentic economy.</sub>
 </p>

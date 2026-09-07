@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "x402-coffer"
 version = "1.0.0"
-description = "Coffer — the self-hosted x402 payment facilitator. Accept 402 micropayments in one line of Python, on your own infrastructure."
+description = "Coffer — x402 Multichain Payment Facilitator"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
