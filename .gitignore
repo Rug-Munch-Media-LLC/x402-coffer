@@ -100,8 +100,8 @@ logs/
 /web/
 /app-web/
 
-# Forgejo
-.forgejo/
+# Forgejo — CI workflows are tracked (remove blanket ignore so ci.yml ships)
+# .forgejo/
 
 # CI/CD caches
 .dvc/

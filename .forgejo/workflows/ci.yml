@@ -1,0 +1,374 @@
+# ── Forgejo Actions / GitHub Actions — CI for Python ─────────
+# Source of truth: standards/templates/ci-python.yml.template
+# Copy to .forgejo/workflows/ci.yml OR .github/workflows/ci.yml.
+
+name: ci-python
+
+on:
+  push:
+    branches: [main, wip/**, hotfix/**]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 04:00 UTC — vulnerability scan + dep update
+    - cron: "0 4 * * *"
+
+# Cancel in-progress runs for the same branch when a new commit arrives
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  PRODUCT_SLUG: "{{PRODUCT_SLUG}}"
+
+jobs:
+  # ── Lint + format check ─────────────────────────────────────
+  lint:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install system deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc libpq-dev curl git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Setup Python
+        run: |
+          uv python install 3.11
+          uv venv --python 3.11 .venv
+      - name: Install deps
+        run: |
+          uv pip install --python .venv/bin/python -e ".[dev]"
+      - name: Lint (ruff)
+        run: source .venv/bin/activate && ruff check . --exit-non-zero-on-fix
+      - name: Format check (ruff)
+        run: source .venv/bin/activate && ruff format --check .
+
+  # ── Type check (mypy) ───────────────────────────────────────
+  typecheck:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python -e ".[dev]"
+      - name: MyPy strict
+        run: source .venv/bin/activate && mypy coffer/
+
+  # ── Tests (pytest) + coverage gates ──────────────────────────
+  test:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: app_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app_test
+      REDIS_URL: redis://redis:6379/0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the per-diff coverage gate (diff-cover) needs
+          # origin/main as the diff base.
+          fetch-depth: 0
+      - run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc libpq-dev curl git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python -e ".[dev]" diff-cover
+      - name: Test (unit) with coverage (BLOCKING)
+        # Tests MUST pass and meet the 60% global floor. LCOV + XML emitted
+        # for the per-diff gate and Codecov trend tracking.
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -x -q -m "not integration" \
+            --cov=coffer \
+            --cov-report=xml:coverage.xml \
+            --cov-report=lcov:coverage.lcov \
+            --cov-fail-under=60
+      - name: Per-diff coverage gate (diff-cover — BLOCKING)
+        # Ratchet: lines CHANGED vs origin/main must be >=60% covered.
+        # covgate (Rust CLI) only parses Istanbul/llvm-cov/Coverlet JSON —
+        # for Python repos diff-cover provides the same per-diff gate.
+        # On pushes to main the diff is empty and this passes trivially.
+        run: |
+          source .venv/bin/activate
+          diff-cover coverage.xml --compare-branch=origin/main --fail-under=60
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            coverage.lcov
+
+  # ── Mutation testing (AI Test Oracle Policy) ────────────────
+  # Nightly full run + manual dispatch. Gate: package mutation score must not
+  # regress >5 points vs the baseline recorded in MUTATION_BASELINE.md.
+  # Per-repo setup: pyproject [tool.mutmut] source_paths + baseline file.
+  mutation:
+    name: Mutation testing (mutmut)
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          pip install mutmut pytest
+          pip install -e . 2>/dev/null || true
+      - name: Run mutations
+        run: mutmut run || true
+      - name: Score + regression gate
+        run: |
+          python3 - <<'EOF'
+          import json, glob, sys, re, os
+          total = survived = notest = 0
+          for f in glob.glob('mutants/**/*.meta', recursive=True):
+              for v in json.load(open(f)).get('exit_code_by_key', {}).values():
+                  total += 1
+                  if v == 0: survived += 1
+                  elif v is None: notest += 1
+          killed = total - survived - notest
+          denom = max(1, total - notest)
+          score = killed / denom * 100
+          print(f"mutation score: {killed}/{denom} = {score:.1f}%")
+          base = None
+          if os.path.exists("MUTATION_BASELINE.md"):
+              m = re.search(r"\*\*TOTAL\*\*[^\n]*?([\d.]+)%", open("MUTATION_BASELINE.md").read())
+              if m: base = float(m.group(1))
+          if base is None:
+              print("no baseline recorded — advisory only"); sys.exit(0)
+          if score < base - 5.0:
+              print(f"GATE FAIL: {score:.1f}% < baseline {base}% - 5"); sys.exit(1)
+          print("gate OK")
+          EOF
+
+  # ── Security ────────────────────────────────────────────────
+  security:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install tools
+        run: |
+          uv tool install gitleaks
+          uv pip install --system bandit
+      - name: Gitleaks (secrets)
+        run: gitleaks detect --source . --no-banner --exit-code 1
+      - name: Bandit (Python security)
+        run: bandit -r coffer/ -q
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  # ── Supply chain & boundaries (2026-08-21 hardening) ────────
+  supply-chain:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install scanners
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates && rm -rf /var/lib/apt/lists/*
+          curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o /usr/local/bin/osv-scanner && chmod +x /usr/local/bin/osv-scanner
+          curl -sSfL https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_linux_amd64.tar.gz | tar xz -C /usr/local/bin trufflehog
+      - name: OSV dependency scan (hallucinated/vulnerable deps)
+        run: osv-scanner scan source --format table ./ || echo "::warning::OSV findings (baseline) — see log"
+      - name: Trufflehog verified-live secrets in new commits
+        run: |
+          trufflehog git file://. --since-commit "HEAD~${#$(git diff --name-only origin/main..HEAD)}" --only-verified --failures-only --no-update || \
+          trufflehog git file://. --max-depth 50 --only-verified --failures-only --no-update
+      - name: Import boundaries (architecture contracts)
+        run: |
+          pip install import-linter && lint-imports || echo "::warning::boundary violations — see importlinter baseline"
+
+  # ── Nightly deep scans ──────────────────────────────────────
+  nightly-deep-scan:
+    if: github.event_name == 'schedule'
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Noseyparker full-history secret hunt
+        run: |
+          curl -sSfL https://github.com/praetorian-inc/noseyparker/releases/latest/download/noseyparker-v0.24.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          ./bin/noseyparker scan --git-history-format all . && ./bin/noseyparker report || true
+      - name: Grype SBOM vulnerability match
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          syft dir:. -o cyclonedx-json=sbom.json 2>/dev/null || pip install syft-to || true
+          grype sbom:sbom.json --fail-on critical || echo "::warning::critical vulns in SBOM"
+
+  # ── Link checking ──────────────────────────────────────────
+  links:
+    runs-on: docker-x64
+    container:
+      image: alpine:3.21
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lychee
+        run: |
+          apk add --no-cache curl
+          curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
+      - name: Check links
+        run: lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules"
+
+  # ── Build + SBOM + Sigstore ─────────────────────────────────
+  build:
+    runs-on: docker-x64
+    needs: [lint, typecheck, test, security]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ env.PRODUCT_SLUG }}:${{ github.sha }}
+          provenance: true
+          sbom: true
+          outputs: type=docker
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          artifact-name: ${{ env.PRODUCT_SLUG }}-sbom.spdx.json
+
+  # ── SAST (semgrep) ──────────────────────────────────────────
+  # BLOCKING. Mirrors the rmi-backend/rmi-mcp-x402 gate: community rules,
+  # ERROR severity only. False positives are annotated inline with
+  # `nosemgrep` at the finding — never blanket-excluded.
+  semgrep:
+    runs-on: docker-x64
+    container:
+      image: python:3.11-slim
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install semgrep
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl git ca-certificates
+          rm -rf /var/lib/apt/lists/*
+          pip install semgrep
+      - name: Semgrep SAST scan
+        run: |
+          semgrep scan --config=auto \
+            --severity=ERROR \
+            --error \
+            --exclude='tests/' \
+            --exclude='.venv/' \
+            --sarif \
+            --output=semgrep.sarif \
+            coffer/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+
+  # ── Sign image (cosign keyless, main only) ──────────────────
+  # Mirrors the rmi-backend sign-image gate. Preconditions (fleet infra):
+  # the docker-x64 job container mounts the Docker socket, the
+  # registry.rugmunch.io hostname resolves from the runner, and Forgejo
+  # OIDC issues workflow tokens for this repo (git.rugmunch.io issuer).
+  sign-image:
+    runs-on: docker-x64
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.3'
+      - name: Set up Docker BuildKit
+        run: |
+          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+          echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
+      - name: Pull build cache
+        run: docker pull registry.rugmunch.io/x402-coffer:buildcache || echo "No cache image yet — building from scratch"
+      - name: Build Docker image with cache
+        run: |
+          docker build \
+            --cache-from registry.rugmunch.io/x402-coffer:buildcache \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            -t registry.rugmunch.io/x402-coffer:${{ github.sha }} \
+            .
+      - name: Push cache image
+        run: |
+          docker tag registry.rugmunch.io/x402-coffer:${{ github.sha }} registry.rugmunch.io/x402-coffer:buildcache
+          docker push registry.rugmunch.io/x402-coffer:buildcache
+      - name: Push release image
+        run: docker push registry.rugmunch.io/x402-coffer:${{ github.sha }}
+      - name: Sign image with keyless (OIDC)
+        run: |
+          cosign sign --yes registry.rugmunch.io/x402-coffer:${{ github.sha }}
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+      - name: Verify signature
+        run: |
+          cosign verify \
+            --certificate-identity "https://git.rugmunch.io/RugMunchMedia/x402-coffer/.forgejo/workflows/ci.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://git.rugmunch.io" \
+            registry.rugmunch.io/x402-coffer:${{ github.sha }}
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+# ── Required status checks for branch protection ──────────────
+# In Forgejo / GitHub repo settings, require ALL of these on `main`:
+#   ✓ lint
+#   ✓ typecheck
+#   ✓ test
+#   ✓ security
+#   ✓ semgrep
