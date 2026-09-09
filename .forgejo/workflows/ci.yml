@@ -20,7 +20,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.11"
-  PRODUCT_SLUG: "{{PRODUCT_SLUG}}"
+  PRODUCT_SLUG: "x402-coffer"
 
 jobs:
   # ── Lint + format check ─────────────────────────────────────
@@ -365,6 +365,18 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
 
+  # ── Dockerfile lint (hadolint, BLOCKING on error) ────────────
+  # Mirrors the rmi-rag docker-lint gate. --failure-threshold error:
+  # warning/info findings (pip pinning, JSON CMD) are advisory.
+  docker-lint:
+    runs-on: docker-x64
+    container:
+      image: hadolint/hadolint:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hadolint Dockerfile
+        run: hadolint --failure-threshold error Dockerfile
+
 # ── Required status checks for branch protection ──────────────
 # In Forgejo / GitHub repo settings, require ALL of these on `main`:
 #   ✓ lint
@@ -372,3 +384,4 @@ jobs:
 #   ✓ test
 #   ✓ security
 #   ✓ semgrep
+#   ✓ docker-lint
