@@ -20,6 +20,8 @@
   <a href="https://www.x402.org/"><img src="https://img.shields.io/badge/x402-v2%20spec-2ea44f" /></a>
 </p>
 
+<p align="center"><strong>Status: Beta</strong> — the core quote → verify → settle flow is live; TRON and the <code>upto</code> / batch-settlement schemes are scaffolded.</p>
+
 ---
 
 ## What Coffer Does
