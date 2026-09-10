@@ -11,7 +11,7 @@ Schema:
     server: server slug
     description: human-readable, max 200 chars
     input_schema/output_schema: JSON Schema
-    auth_scope: gopass path e.g. "rmi/infra/netcup/ssh"
+    auth_scope: gopass path e.g. "[INTERNAL_SECRET_PATH]"
     deprecated: bool
     successor: optional replacement name
 """
@@ -59,7 +59,7 @@ class MCPToolManifest(BaseModel):
         ...,
         pattern=r"^[a-z][a-z0-9/_-]*$",
         description="Gopass path. Resolved at tool-call time, never exposed to agents.",
-        examples=["rmi/infra/netcup/ssh", "rmi/api/coingecko/key"],
+        examples=["[INTERNAL_SECRET_PATH]", "[INTERNAL_SECRET_PATH]"],
     )
     deprecated: bool = False
     successor: str | None = Field(
