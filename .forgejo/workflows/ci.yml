@@ -338,54 +338,18 @@ jobs:
           name: semgrep-report
           path: semgrep.sarif
 
-  # ── Sign image (cosign keyless, main only) ──────────────────
-  # Mirrors the rmi-backend sign-image gate. Preconditions (fleet infra):
-  # the docker-x64 job container mounts the Docker socket, the
-  # registry.rugmunch.io hostname resolves from the runner, and Forgejo
-  # OIDC issues workflow tokens for this repo (git.rugmunch.io issuer).
-  sign-image:
-    runs-on: docker-x64
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
-        with:
-          cosign-release: 'v2.4.3'
-      - name: Set up Docker BuildKit
-        run: |
-          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
-          echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
-      - name: Pull build cache
-        run: docker pull registry.rugmunch.io/x402-coffer:buildcache || echo "No cache image yet — building from scratch"
-      - name: Build Docker image with cache
-        run: |
-          docker build \
-            --cache-from registry.rugmunch.io/x402-coffer:buildcache \
-            --build-arg BUILDKIT_INLINE_CACHE=1 \
-            -t registry.rugmunch.io/x402-coffer:${{ github.sha }} \
-            .
-      - name: Push cache image
-        run: |
-          docker tag registry.rugmunch.io/x402-coffer:${{ github.sha }} registry.rugmunch.io/x402-coffer:buildcache
-          docker push registry.rugmunch.io/x402-coffer:buildcache
-      - name: Push release image
-        run: docker push registry.rugmunch.io/x402-coffer:${{ github.sha }}
-      - name: Sign image with keyless (OIDC)
-        run: |
-          cosign sign --yes registry.rugmunch.io/x402-coffer:${{ github.sha }}
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-      - name: Verify signature
-        run: |
-          cosign verify \
-            --certificate-identity "https://git.rugmunch.io/RugMunchMedia/x402-coffer/.forgejo/workflows/ci.yml@refs/heads/main" \
-            --certificate-oidc-issuer "https://git.rugmunch.io" \
-            registry.rugmunch.io/x402-coffer:${{ github.sha }}
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-
+  # ── Sign image — DISABLED 2026-09-11 ────────────────────────
+  # This job cannot function on the current fleet and its 'success' status
+  # was a skip artifact (needs: build was perpetually failing). Blockers:
+  #   1. registry.rugmunch.io does not exist (no DNS, no registry service)
+  #   2. No CI registry credentials (the job had no login step)
+  #   3. Keyless cosign needs a Fulcio-compatible OIDC issuer; Forgejo does
+  #      not issue workflow OIDC tokens
+  # Path back: deploy a registry (Zot/registry:2) + nginx vhost, add
+  # registry credentials as CI secrets + a docker login step, and switch to
+  # key-based cosign (cosign.key in CI secrets) — then restore the job from
+  # git history (removed in 77b67dd..HEAD range, see 'git log -p').
+  # Image build validation is NOT lost: the build job builds the image.
   # ── Dockerfile lint (hadolint, BLOCKING on error) ────────────
   # Mirrors the rmi-rag docker-lint gate. --failure-threshold error:
   # warning/info findings (pip pinning, JSON CMD) are advisory.
