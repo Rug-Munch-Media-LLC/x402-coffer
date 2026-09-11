@@ -1,3 +1,8 @@
+# DISABLED 2026-09-11 — release-please requires the GitHub GraphQL API;
+# Forgejo does not implement GraphQL, so the action authenticates against
+# api.github.com with a Forgejo token and always fails (Bad credentials).
+# Fleet-wide known issue. Releases: tag manually (git tag vN.N.N + push)
+# until a Forgejo-native release action is adopted.
 name: Release
 
 on:

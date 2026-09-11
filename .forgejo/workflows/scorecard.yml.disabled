@@ -1,3 +1,8 @@
+# DISABLED 2026-09-11 — GitHub-only tooling, cannot run on Forgejo:
+# OpenSSF Scorecard analyzes PUBLIC GITHUB repos via the GitHub API.
+# This is a PRIVATE Forgejo repo — the gate is structurally impossible here.
+# Security posture is covered by: gitleaks, bandit, semgrep, trivy,
+# osv-scanner, trufflehog (all functional in ci.yml).
 # OpenSSF Scorecard — automated security assessment
 # Scores 0-10 across 18 checks (branch protection, signed releases, token permissions, etc.)
 # Runs weekly (Monday 6AM UTC) and on push to main

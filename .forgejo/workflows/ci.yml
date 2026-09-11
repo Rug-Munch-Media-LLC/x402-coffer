@@ -27,7 +27,7 @@ jobs:
   lint:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,7 +57,7 @@ jobs:
   typecheck:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
       - run: |
@@ -72,7 +72,7 @@ jobs:
   test:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     services:
       postgres:
         image: postgres:16
@@ -126,7 +126,7 @@ jobs:
           diff-cover coverage.xml --compare-branch=origin/main --fail-under=60
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: coverage-report
           path: |
@@ -141,7 +141,7 @@ jobs:
     name: Mutation testing (mutmut)
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
@@ -180,7 +180,7 @@ jobs:
   security:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
       - run: |
@@ -198,17 +198,17 @@ jobs:
       - name: Bandit (Python security)
         run: bandit -r coffer/ -q
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          severity: HIGH,CRITICAL
-          exit-code: "1"
+        # Binary install: runner action-clone cache is flaky (partial clones
+        # -> ref-not-found); master tag is unstable. Same scan, no action.
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy fs --severity HIGH,CRITICAL --exit-code 1 .
 
   # ── Supply chain & boundaries (2026-08-21 hardening) ────────
   supply-chain:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -217,13 +217,12 @@ jobs:
         run: |
           apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates && rm -rf /var/lib/apt/lists/*
           curl -sSfL https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64 -o /usr/local/bin/osv-scanner && chmod +x /usr/local/bin/osv-scanner
-          curl -sSfL https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_linux_amd64.tar.gz | tar xz -C /usr/local/bin trufflehog
+          curl -sSfL https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_3.97.4_linux_amd64.tar.gz | tar xz -C /usr/local/bin trufflehog
       - name: OSV dependency scan (hallucinated/vulnerable deps)
         run: osv-scanner scan source --format table ./ || echo "::warning::OSV findings (baseline) — see log"
       - name: Trufflehog verified-live secrets in new commits
         run: |
-          trufflehog git file://. --since-commit "HEAD~${#$(git diff --name-only origin/main..HEAD)}" --only-verified --failures-only --no-update || \
-          trufflehog git file://. --max-depth 50 --only-verified --failures-only --no-update
+          trufflehog git file://. --results=verified --fail --no-update
       - name: Import boundaries (architecture contracts)
         run: |
           pip install import-linter && lint-imports || echo "::warning::boundary violations — see importlinter baseline"
@@ -233,7 +232,7 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -280,10 +279,11 @@ jobs:
           sbom: true
           outputs: type=docker
       - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@v0
-        with:
-          format: spdx-json
-          artifact-name: ${{ env.PRODUCT_SLUG }}-sbom.spdx.json
+        # Binary syft: sbom-action releases past v0.23.1 need node24
+        # (runner max node20) and action clones are flaky on this runner.
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft dir:. --output spdx-json=${{ env.PRODUCT_SLUG }}-sbom.spdx.json
 
   # ── SAST (semgrep) ──────────────────────────────────────────
   # BLOCKING. Mirrors the rmi-backend/rmi-mcp-x402 gate: community rules,
@@ -292,7 +292,7 @@ jobs:
   semgrep:
     runs-on: docker-x64
     container:
-      image: python:3.11-slim
+      image: nikolaik/python-nodejs:python3.11-nodejs20
     steps:
       - uses: actions/checkout@v4
       - name: Install semgrep
@@ -311,7 +311,7 @@ jobs:
             --sarif \
             --output=semgrep.sarif \
             coffer/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v3
         if: always()
         with:
           name: semgrep-report
