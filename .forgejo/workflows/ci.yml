@@ -80,7 +80,8 @@ jobs:
           POSTGRES_DB: app_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        ports: ["5432:5432"]
+        # No host port publishing: job reaches the service by name over the
+        # Docker network. Host ports collide with the fleet's own services.
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
@@ -88,7 +89,7 @@ jobs:
           --health-retries 5
       redis:
         image: redis:7
-        ports: ["6379:6379"]
+        # No host port publishing (see postgres note above).
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app_test
       REDIS_URL: redis://redis:6379/0
@@ -196,7 +197,7 @@ jobs:
       - name: Gitleaks (secrets)
         run: gitleaks detect --source . --no-banner --exit-code 1
       - name: Bandit (Python security)
-        run: bandit -r coffer/ -q
+        run: bandit -ll -r coffer/ -q  # -ll: block MEDIUM+, LOW advisory (fleet canon — mirrors contextcrypto)
       - name: Trivy filesystem scan
         # Binary install: runner action-clone cache is flaky (partial clones
         # -> ref-not-found); master tag is unstable. Same scan, no action.
@@ -260,7 +261,14 @@ jobs:
           apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
           curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
       - name: Check links
-        run: lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules"
+        run: |
+          # git.rugmunch.io: private Forgejo — unauthenticated requests 404 by
+          # design (lychee cannot auth to it). docs/x402-official-spec: vendored
+          # upstream docs whose root-relative links resolve on the upstream
+          # docs site, not in this checkout. Neither is a dead link in OUR docs.
+          lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" \
+            --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules" \
+            --exclude "git.rugmunch.io" --exclude "docs/x402-official-spec"
 
   # ── Build + SBOM + Sigstore ─────────────────────────────────
   build:

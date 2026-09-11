@@ -161,7 +161,8 @@ class X402Settings(BaseModel):
     rmi_mcp_api_key: str = ""
 
     # ── Operator UX for the deployable FastAPI app ────────────────────────
-    host: str = "0.0.0.0"
+    # Binds behind nginx/cloudflared; operator-overridable via X402_HOST.
+    host: str = "0.0.0.0"  # nosec B104
     port: int = 8001
     debug: bool = False
 
@@ -289,7 +290,8 @@ class X402Settings(BaseModel):
             rmi_mcp_api_key=_canonical_env(
                 e, "X402_RMI_MCP_API_KEY", "RMI_MCP_API_KEY", "COFFER_RMI_MCP_API_KEY"
             ),
-            host=g("X402_HOST", "0.0.0.0"),
+            # Default bind, fronted by nginx/cloudflared.
+            host=g("X402_HOST", "0.0.0.0"),  # nosec B104
             port=int(g("X402_PORT", "8001")),
             debug=_env_bool("X402_DEBUG", False),
         )

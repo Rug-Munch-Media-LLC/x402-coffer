@@ -49,6 +49,14 @@ dev = [
   "fastmcp>=3.4.5",
 ]
 
+[tool.mypy]
+# prometheus_client is OPTIONAL at runtime (observability no-ops without it)
+# and must not become a hard dependency. Silence the missing-import error
+# for it only; everything else stays at default strictness.
+[[tool.mypy.overrides]]
+module = "prometheus_client.*"
+ignore_missing_imports = true
+
 [project.urls]
 Homepage = "https://git.rugmunch.io/RugMunchMedia/x402-coffer"
 
