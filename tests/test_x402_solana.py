@@ -56,8 +56,20 @@ WRONG_MINT = "FakeMint111111111111111111111111111111111111111111"
 SIG = "5" * 87 + "Z"  # signature-shaped string; the verifier does not b58-check
 
 
+def _sig(tag: str) -> str:
+    """A unique signature-shaped value for tests that BURN a tx_hash.
+
+    FacilitatorRouter.verify consumes the tx_hash in a shared replay store
+    (Redis when X402_REDIS_URL is set); tests that verify through the router
+    must not reuse a signature or later tests see 'transaction already used
+    (replay)'. The verifier never validates the signature's content.
+    """
+    return "5" * (87 - len(tag)) + tag + "Z"
+
+
 def _tx_result(
     *,
+    sig: str = SIG,
     mint: str = SOLANA_USDC_MINT,
     destination: str = MERCHANT_ATA,
     amount: str = "1000000",
@@ -97,7 +109,7 @@ def _tx_result(
             "postTokenBalances": post_token_balances,
         },
         "transaction": {
-            "signatures": [SIG],
+            "signatures": [sig],
             "message": {
                 "accountKeys": [
                     {
@@ -308,9 +320,10 @@ async def test_router_verify_solana_mainnet_wiring(solana_wallet: None) -> None:
     """Self-hosted path: solana:mainnet reaches the SPL RPC verifier and the
     on-chain result is returned (facilitator=solana-rpc)."""
     router = FacilitatorRouter(facilitators=[], self_hosted=True)
+    sig = _sig("wiring")
     with respx.mock:
-        _mock_rpc(RPC, _tx_result())
-        res = await router.verify("pid_sol_wiring", SIG, "solana:mainnet", "USDC", 1.0)
+        _mock_rpc(RPC, _tx_result(sig=sig))
+        res = await router.verify("pid_sol_wiring", sig, "solana:mainnet", "USDC", 1.0)
     assert res["verified"] is True, res
     assert res["facilitator"] == "solana-rpc", res
 
@@ -318,9 +331,10 @@ async def test_router_verify_solana_mainnet_wiring(solana_wallet: None) -> None:
 @pytest.mark.asyncio
 async def test_router_verify_solana_usdt_wiring(solana_wallet: None) -> None:
     router = FacilitatorRouter(facilitators=[], self_hosted=True)
+    sig = _sig("usdt")
     with respx.mock:
-        _mock_rpc(RPC, _tx_result(mint=SOLANA_USDT_MINT))
-        res = await router.verify("pid_sol_usdt", SIG, "solana:mainnet", "USDT", 1.0)
+        _mock_rpc(RPC, _tx_result(sig=sig, mint=SOLANA_USDT_MINT))
+        res = await router.verify("pid_sol_usdt", sig, "solana:mainnet", "USDT", 1.0)
     assert res["verified"] is True, res
     assert res.get("mint") == SOLANA_USDT_MINT, res
 
@@ -338,10 +352,11 @@ async def test_external_path_solana_fallback_no_attribute_error(
         settle_url="https://fac.example/settle",
     )
     router = FacilitatorRouter(facilitators=[cfg], self_hosted=False)
+    sig = _sig("extfallback")
     with respx.mock:
         respx.post("https://fac.example/verify").mock(return_value=httpx.Response(503))
-        _mock_rpc(RPC, _tx_result())
-        res = await router.verify("pid_sol_ext", SIG, "solana:mainnet", "USDC", 1.0)
+        _mock_rpc(RPC, _tx_result(sig=sig))
+        res = await router.verify("pid_sol_ext", sig, "solana:mainnet", "USDC", 1.0)
     assert res["verified"] is True, res
     assert res["facilitator"] == "solana-rpc", res
 

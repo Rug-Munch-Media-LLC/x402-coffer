@@ -25,6 +25,7 @@ import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
+from coffer._engine.replay_redis import create_replay_store
 from coffer._engine.service import ReplayStore
 
 PAYMENT_IDENTIFIER = "payment-identifier"
@@ -152,7 +153,9 @@ class PaymentIdentifierStore:
     """
 
     ttl: int = DEFAULT_IDEMPOTENCY_TTL
-    _store: ReplayStore = field(default_factory=ReplayStore)
+    # Factory picks RedisReplayStore when X402_REDIS_URL/REDIS_URL is set
+    # (multi-instance-safe idempotency); in-memory ReplayStore otherwise.
+    _store: ReplayStore = field(default_factory=create_replay_store)
     # payment_id -> fingerprint marker (who claimed it) for the 409 path.
     _claims: dict[str, str] = field(default_factory=dict)
 
@@ -215,7 +218,12 @@ class PaymentIdentifierStore:
             return PaymentIdReplay("cached", "payment id already processed within TTL", payment_id)
 
         # New (or expired beyond TTL) -> burn the id now, process normally.
-        await self._store.check_and_burn(key)
+        # Honor the burn result: if the claim was already taken (race between
+        # check and burn, or a key that survived a degraded read), serve
+        # cached rather than double-processing the payment.
+        if not await self._store.check_and_burn(key):
+            self._claims.setdefault(payment_id, fingerprint)
+            return PaymentIdReplay("cached", "payment id already processed within TTL", payment_id)
         self._claims[payment_id] = fingerprint
         return PaymentIdReplay("accepted", "first use of payment id", payment_id)
 

@@ -63,6 +63,7 @@ class RedisReplayStore:
         self._mem: set[str] = set()
         self._redis: Any = None
         self._redis_broken = False
+        self._client_loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
         self._redis_url = redis_url if redis_url is not None else REDIS_URL
         if self._redis_url:
@@ -73,6 +74,36 @@ class RedisReplayStore:
             except Exception as e:  # noqa: BLE001 - pragma: no cover - defensive
                 log.warning("x402_replay_redis_unavailable", extra={"error": str(e)})
                 self._redis_broken = True
+
+    def _active_client(self) -> Any:
+        """Return the Redis client bound to the RUNNING event loop.
+
+        A client whose connections were created in a previous event loop is
+        unusable (``asyncio.run()`` per call, embedded scripts, test helpers).
+        When the running loop changes we rebuild the client so replay
+        protection keeps working instead of silently degrading to the
+        per-process memory fallback. Injected clients (tests) are adopted on
+        first use.
+        """
+        if self._redis is None or self._redis_broken:
+            return None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - no running loop: use as-is
+            return self._redis
+        if self._client_loop is None:
+            self._client_loop = loop  # adopt (covers injected test clients)
+        elif self._client_loop is not loop:
+            try:
+                from redis import asyncio as aioredis  # type: ignore[import-untyped]
+
+                self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
+                self._client_loop = loop
+            except Exception as e:  # noqa: BLE001 - pragma: no cover - defensive
+                log.warning("x402_replay_redis_unavailable", extra={"error": str(e)})
+                self._redis_broken = True
+                self._redis = None
+        return self._redis
 
     @property
     def uses_redis(self) -> bool:
@@ -85,13 +116,14 @@ class RedisReplayStore:
         ``SETNX`` (``SET ... NX``) for the atomic claim followed by
         ``EXPIRE`` for the TTL; falls back to the in-memory set on error.
         """
-        if self._redis is not None:
+        client = self._active_client()
+        if client is not None:
             try:
                 # SETNX: atomic claim of the nonce (only succeeds once).
-                ok = await self._redis.set(key, "1", nx=True)
+                ok = await client.set(key, "1", nx=True)
                 if ok:
                     # EXPIRE: bound the key's lifetime (24h default).
-                    await self._redis.expire(key, self.ttl)
+                    await client.expire(key, self.ttl)
                 return bool(ok)
             except Exception as e:  # noqa: BLE001 - pragma: no cover - runtime redis failure
                 log.warning("x402_replay_redis_error", extra={"error": str(e)})
@@ -107,9 +139,10 @@ class RedisReplayStore:
 
     async def check(self, key: str) -> bool:
         """Non-destructive membership check (True when already used)."""
-        if self._redis is not None:
+        client = self._active_client()
+        if client is not None:
             try:
-                exists = await self._redis.get(key)
+                exists = await client.get(key)
                 return bool(exists)
             except Exception:  # noqa: BLE001 - pragma: no cover
                 return key in self._mem
@@ -134,7 +167,9 @@ def create_replay_store(
     url = redis_url if redis_url is not None else os.getenv("X402_REDIS_URL", os.getenv("REDIS_URL", ""))
     if url:
         return RedisReplayStore(redis_url=url, ttl=ttl)  # type: ignore[return-value]
-    return ReplayStore(ttl=ttl)
+    # redis_url="" forces the in-memory backend even when the module-level
+    # REDIS_URL constant was captured from the environment at import time.
+    return ReplayStore(ttl=ttl, redis_url="")
 
 
 __all__ = [
