@@ -82,7 +82,9 @@ async def create_batch_payment(operations: list[str]) -> dict[str, Any]:
     }
 
 
-async def verify_batch_payment(batch_id: str, tx_hash: str, network: str = "", asset: str = "") -> dict[str, Any]:
+async def verify_batch_payment(
+    batch_id: str, tx_hash: str, network: str = "", asset: str = ""
+) -> dict[str, Any]:
     """Verify a batch payment on-chain and mark it paid if valid."""
     with _batch_lock:
         batch = _batch_payments.get(batch_id)

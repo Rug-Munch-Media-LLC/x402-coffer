@@ -60,3 +60,6 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+# docs/x402-official-spec/ = vendored upstream spec docs (code blocks inside
+# markdown are upstream content — never reformat).
+extend-exclude = ["docs/x402-official-spec"]

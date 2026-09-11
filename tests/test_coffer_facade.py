@@ -81,9 +81,7 @@ def test_payment_identifier_same_id_different_fingerprint_conflicts():
 
     store = PaymentIdentifierStore()
     pid = "pay_" + "a" * 30
-    fp_a = store.fingerprint(
-        {"scheme": "exact", "network": "eip155:8453", "asset": "USDC", "amount": "0.01"}
-    )
+    fp_a = store.fingerprint({"scheme": "exact", "network": "eip155:8453", "asset": "USDC", "amount": "0.01"})
     fp_b = store.fingerprint(
         {"scheme": "exact", "network": "eip155:8453", "asset": "USDC", "amount": "99.00"}
     )

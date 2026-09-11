@@ -26,6 +26,7 @@ A misconfigured merchant wallet fails fast at startup with a clear error — Cof
 ```python
 from coffer import require_payment
 
+
 @app.get("/premium-tool")
 @require_payment(asset="USDC", network="base", amount=0.001, operation="tool_use")
 async def premium_endpoint(request):

@@ -135,8 +135,7 @@ class PaymentStore:
         # settled+finalized payment id is rejected outright (fail closed).
         if existing is not None and existing.get("status") == PaymentStatus.FINALIZED:
             raise ValueError(
-                f"payment {payment_id} is FINALIZED; verify is rejected "
-                "(finalized commitments are immutable)"
+                f"payment {payment_id} is FINALIZED; verify is rejected (finalized commitments are immutable)"
             )
         self._records[payment_id] = {
             "payment_id": payment_id,
@@ -197,8 +196,11 @@ class PaymentStore:
         # when it carries a positive, finite server-confirmed amount. Zero /
         # missing amounts (e.g. a client-asserted default) never pass — the
         # paid amount is bound at verify time against the operation minimum.
+        amount_raw = rec.get("amount_usd")
+        if amount_raw is None:
+            return False
         try:
-            recorded_amount = float(rec.get("amount_usd"))
+            recorded_amount = float(amount_raw)
         except (TypeError, ValueError):
             return False
         if not math.isfinite(recorded_amount) or recorded_amount <= 0:

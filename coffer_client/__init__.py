@@ -82,7 +82,7 @@ class CofferClient:
 
                 self._wallet.key = Account.from_key(wallet_key)
                 self._wallet.address = self._wallet.key.address
-            except Exception as e:  # noqa: BLE001 — fail closed on bad key
+            except Exception as e:
                 raise ValueError(f"invalid wallet_key: {e}") from e
             self._wallet.rpc_url = rpc_url
             self._wallet.network = network
@@ -100,9 +100,7 @@ class CofferClient:
     async def post(self, url: str, **kw: Any) -> httpx.Response:
         return await self.request("POST", url, **kw)
 
-    async def request(
-        self, method: str, url: str, *, max_attempts: int = 2, **kw: Any
-    ) -> httpx.Response:
+    async def request(self, method: str, url: str, *, max_attempts: int = 2, **kw: Any) -> httpx.Response:
         headers = {**self._headers, **(kw.pop("headers", {}) or {})}
         resp = await self._http.request(method, url, headers=headers, **kw)
         attempts = 1
@@ -218,9 +216,7 @@ class CofferClient:
                     raise RuntimeError(f"RPC error: {out['error']}")
                 return out["result"]
 
-            nonce = int(
-                await call("eth_getTransactionCount", [self._wallet.address, "pending"]), 16
-            )
+            nonce = int(await call("eth_getTransactionCount", [self._wallet.address, "pending"]), 16)
             gas_price = int(await call("eth_gasPrice", []), 16)
             token_acct = await call("eth_getTransactionCount", [token, "latest"])  # liveness probe
             del token_acct
@@ -234,7 +230,7 @@ class CofferClient:
                 "data": "0x" + selector + data,
             }
             signed = self._wallet.key.sign_transaction(tx)
-            raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+            raw = getattr(signed, "raw_transaction", None) or signed.rawTransaction
             tx_hash = await call(
                 "eth_sendRawTransaction",
                 ["0x" + (raw.hex() if isinstance(raw, bytes) else str(raw))],

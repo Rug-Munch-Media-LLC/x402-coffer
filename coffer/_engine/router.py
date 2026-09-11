@@ -167,7 +167,7 @@ async def _read_payload(request: Request) -> tuple[dict[str, Any] | None, JSONRe
     return data, None
 
 
-def _scalar_field(payload: dict[str, Any], *names: str) -> tuple[str, str | None]:
+def _scalar_field(payload: dict[str, Any], *names: str) -> tuple[str, JSONResponse | None]:
     """Extract the first present string-typed field among ``names``.
 
     Returns ``(value, None)`` or ``(value, problem_response)`` when the field
@@ -241,6 +241,7 @@ async def verify(request: Request) -> JSONResponse:
     payload, problem = await _read_payload(request)
     if problem is not None:
         return problem
+    assert payload is not None  # contract: problem is None iff payload is set
     schema_problem = _validate_common_schema(payload)
     if schema_problem is not None:
         return schema_problem
@@ -376,6 +377,7 @@ async def settle(request: Request) -> JSONResponse:
     payload, problem = await _read_payload(request)
     if problem is not None:
         return problem
+    assert payload is not None  # contract: problem is None iff payload is set
     schema_problem = _validate_common_schema(payload)
     if schema_problem is not None:
         return schema_problem

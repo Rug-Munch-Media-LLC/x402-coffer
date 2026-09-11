@@ -244,9 +244,7 @@ async def test_usdt_transfer_verified() -> None:
     """USDT is SPL-verifiable too — same flow, USDT mint."""
     with respx.mock:
         _mock_rpc(RPC, _tx_result(mint=SOLANA_USDT_MINT))
-        res = await verify_solana_payment(
-            SIG, MERCHANT, 1.0, rpc_url=RPC, expected_mint=SOLANA_USDT_MINT
-        )
+        res = await verify_solana_payment(SIG, MERCHANT, 1.0, rpc_url=RPC, expected_mint=SOLANA_USDT_MINT)
     assert res["verified"] is True, res
     assert res["mint"] == SOLANA_USDT_MINT
 
@@ -259,9 +257,7 @@ async def test_primary_rpc_down_falls_back_to_secondary() -> None:
     with respx.mock:
         respx.post(RPC).mock(return_value=httpx.Response(503))
         _mock_rpc(RPC_FALLBACK, _tx_result())
-        res = await verify_solana_payment(
-            SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK]
-        )
+        res = await verify_solana_payment(SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK])
     assert res["verified"] is True, res
 
 
@@ -270,9 +266,7 @@ async def test_all_rpcs_down_fails_closed() -> None:
     with respx.mock:
         respx.post(RPC).mock(return_value=httpx.Response(503))
         respx.post(RPC_FALLBACK).mock(return_value=httpx.Response(503))
-        res = await verify_solana_payment(
-            SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK]
-        )
+        res = await verify_solana_payment(SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK])
     assert res["verified"] is False, res
     assert res["reason"].startswith("rpc_http_error"), res
 
@@ -292,9 +286,7 @@ async def test_rpc_error_envelope_is_final_not_retried() -> None:
             )
         )
         fallback_route = _mock_rpc(RPC_FALLBACK, _tx_result())
-        res = await verify_solana_payment(
-            SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK]
-        )
+        res = await verify_solana_payment(SIG, MERCHANT, 1.0, rpc_url=RPC, fallback_rpc_urls=[RPC_FALLBACK])
     assert res["verified"] is False, res
     assert res["reason"].startswith("rpc_error_response"), res
     assert fallback_route.call_count == 0
@@ -359,12 +351,8 @@ async def test_verify_solana_missing_wallet_fails_closed(monkeypatch: pytest.Mon
     """No X402_WALLET_SOLANA -> fail closed BEFORE any RPC call."""
     monkeypatch.setitem(external_verify.X402_NETWORK_WALLETS, "solana:mainnet", "")
     with respx.mock:
-        route = respx.post(RPC).mock(
-            return_value=httpx.Response(200, json=_rpc_envelope(_tx_result()))
-        )
-        res = await external_verify.verify_solana(
-            "pid_nowallet", SIG, "solana:mainnet", "USDC", 1.0
-        )
+        route = respx.post(RPC).mock(return_value=httpx.Response(200, json=_rpc_envelope(_tx_result())))
+        res = await external_verify.verify_solana("pid_nowallet", SIG, "solana:mainnet", "USDC", 1.0)
     assert res["verified"] is False, res
     assert "X402_WALLET_SOLANA" in res["reason"], res
     assert route.call_count == 0

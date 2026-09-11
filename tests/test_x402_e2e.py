@@ -190,14 +190,10 @@ async def test_expired_payment_id_rejected(e2e: X402E2EHarness) -> None:
 async def test_nonce_reuse_same_tx_hash_returns_410(e2e: X402E2EHarness) -> None:
     tx = "0xtx_nonce"
     async with e2e.caller(SENDER_IP) as client:
-        first = await _pay(
-            e2e, client, tx_hash=tx, payment_id=_pid("nonce1"), paid_atomic=REQUIRED_ATOMIC
-        )
+        first = await _pay(e2e, client, tx_hash=tx, payment_id=_pid("nonce1"), paid_atomic=REQUIRED_ATOMIC)
         assert first.status_code == 200
         # Replay the SAME tx_hash -> 410 Gone (replay-nonce store burned it).
-        second = await _pay(
-            e2e, client, tx_hash=tx, payment_id=_pid("nonce2"), paid_atomic=REQUIRED_ATOMIC
-        )
+        second = await _pay(e2e, client, tx_hash=tx, payment_id=_pid("nonce2"), paid_atomic=REQUIRED_ATOMIC)
     assert second.status_code == 410
     assert "replay" in second.json().get("error", "").lower()
 
@@ -206,9 +202,7 @@ async def test_underpayment_rejected(e2e: X402E2EHarness) -> None:
     tx = "0xtx_under"
     async with e2e.caller(SENDER_IP) as client:
         # Paid 1 atomic less than the server-required 1000 -> rejected.
-        r = await _pay(
-            e2e, client, tx_hash=tx, payment_id=_pid("under"), paid_atomic=REQUIRED_ATOMIC - 1
-        )
+        r = await _pay(e2e, client, tx_hash=tx, payment_id=_pid("under"), paid_atomic=REQUIRED_ATOMIC - 1)
     assert r.status_code == 402
     assert "underpayment" in r.json().get("error", "").lower()
 

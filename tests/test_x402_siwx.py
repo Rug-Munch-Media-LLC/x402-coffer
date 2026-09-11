@@ -35,9 +35,7 @@ def _sign(message: str) -> str:
 
 
 def _proof(message: str, signature: str) -> str:
-    return base64.b64encode(
-        json.dumps({"message": message, "signature": signature}).encode()
-    ).decode()
+    return base64.b64encode(json.dumps({"message": message, "signature": signature}).encode()).decode()
 
 
 def test_build_siwx_message_contains_caip122_fields() -> None:

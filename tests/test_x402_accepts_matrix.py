@@ -42,9 +42,7 @@ def _offered_prices() -> dict[str, Any]:
     return {(e["network"], e["asset"]): e for e in build_multi_asset_accepts(MATRIX_OP)}
 
 
-@pytest.mark.parametrize(
-    "row", flatten_supported_assets(), ids=lambda r: f"{r['network']}-{r['asset']}"
-)
+@pytest.mark.parametrize("row", flatten_supported_assets(), ids=lambda r: f"{r['network']}-{r['asset']}")
 def test_every_supported_asset_yields_valid_or_honestly_absent_option(row: dict[str, Any]) -> None:
     """Every advertised (network, asset) yields a valid option; an unconfigured
     chain's assets are NEVER advertised (fail-closed, not blank pay-to)."""

@@ -38,7 +38,7 @@ SOLANA_RPC_TIMEOUT_SECONDS = 15.0
 # canonical token program (not a custom program with a spoofed "parsed").
 # Well-known public constant, NOT a secret: noqa S105 (bandit heuristically
 # treats base58 ids beginning with "Token" as credentials).
-SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"  # noqa: S105
+SPL_TOKEN_PROGRAM_ID = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
 
 # Only transferChecked carries the mint in jsonParsed output; plain SPL
 # ``transfer`` does not, so it cannot be attributed to USDC without extra
@@ -119,8 +119,7 @@ def _iter_spl_instructions(result: dict[str, Any]) -> list[tuple[str, dict[str, 
 
 def _amount_usd_value(amount_atomic: int, decimals: int, usdc_price_usd: float) -> float:
     """USD value of an atomic amount, rounded to 6 decimals."""
-    if decimals < 0:
-        decimals = 0
+    decimals = max(decimals, 0)
     return float(round(amount_atomic / (10**decimals) * usdc_price_usd, 6))
 
 

@@ -106,7 +106,7 @@ def _get_secret(name: str, env_var: str, default: str = "") -> str:
         if resolver is not None:
             try:
                 val = resolver(name) or ""
-            except Exception:  # resolver must never break import/config
+            except Exception:  # noqa: BLE001 — resolver must never break import/config
                 logger.warning("x402_secret_resolver_failed", extra={"secret_name": name})
     return val or default
 
@@ -244,14 +244,14 @@ if X402_SELF_FACILITATE and not (X402_SELF_FACILITATOR_KEY and X402_SELF_FACILIT
 # Re-export the full public surface. Submodules import their config from this
 # package root (constants above), so these imports must come AFTER the config
 # block to avoid circular initialization.
-from .batch import (  # noqa: E402
+from .batch import (
     _batch_lock,
     _batch_payments,
     create_batch_payment,
     is_batch_paid,
     verify_batch_payment,
 )
-from .facilitator import (  # noqa: E402
+from .facilitator import (
     DEFAULT_FACILITATORS,
     ERC20_TRANSFER_SELECTOR,
     FacilitatorConfig,
@@ -261,8 +261,8 @@ from .facilitator import (  # noqa: E402
     register_facilitator,
     set_facilitator_router,
 )
-from .handler import X402Handler  # noqa: E402
-from .scheme import (  # noqa: E402
+from .handler import X402Handler
+from .scheme import (
     _NATIVE_ASSETS,
     ASSET_DECIMALS,
     CAIP2_NETWORK_IDS,
@@ -306,7 +306,7 @@ from .scheme import (  # noqa: E402
     usd_per_unit_for,
     validate_client_amount,
 )
-from .self_facilitator import (  # noqa: E402
+from .self_facilitator import (
     CHAIN_ID_BY_NETWORK,
     NonceStore,
     SelfFacilitator,
@@ -314,7 +314,7 @@ from .self_facilitator import (  # noqa: E402
     SettleOutcome,
     VerifyResult,
 )
-from .solana_verifier import (  # noqa: E402
+from .solana_verifier import (
     DEFAULT_SOLANA_RPC_URL,
     SOLANA_RPC_TIMEOUT_SECONDS,
     SOLANA_USDC_MINT,
@@ -376,8 +376,8 @@ __all__ = [
     "_default_networks_for_asset",
     "_encode_payment_required_body",
     "_encode_payment_response",
-    "_env_flag",
     "_env",
+    "_env_flag",
     "_facilitator_router",
     "_from_atomic",
     "_get_secret",

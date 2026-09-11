@@ -91,9 +91,7 @@ async def test_forged_signature_rejected(_clean_eip712_env: None) -> None:
     sig = getattr(signed, "signature", signed)
     auth["signature"] = ("0x" + sig.hex()) if isinstance(sig, bytes) else str(sig)
 
-    result = await fac.verify(
-        {"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth}
-    )
+    result = await fac.verify({"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth})
     assert result.verified is False
 
 
@@ -104,9 +102,7 @@ async def test_expired_authorization_rejected(_clean_eip712_env: None) -> None:
     auth = _auth(pay_to=pay_to, expired=True)
     digest = fac._digest(auth, chain_id=8453, token=USDC_BASE)
     auth["signature"] = _sign_digest(digest)
-    result = await fac.verify(
-        {"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth}
-    )
+    result = await fac.verify({"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth})
     assert result.verified is False
 
 
@@ -118,9 +114,7 @@ async def test_wrong_recipient_rejected(_clean_eip712_env: None) -> None:
     auth = _auth(pay_to=attacker)
     digest = fac._digest(auth, chain_id=8453, token=USDC_BASE)
     auth["signature"] = _sign_digest(digest)
-    result = await fac.verify(
-        {"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth}
-    )
+    result = await fac.verify({"network": BASE, "asset": "USDC", "amount_usd": 0.001, "authorization": auth})
     assert result.verified is False
 
 

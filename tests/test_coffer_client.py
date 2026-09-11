@@ -92,9 +92,7 @@ async def test_spending_ceiling_refuses_overpriced_offer() -> None:
         raise AssertionError("must not broadcast over ceiling")
 
     transport = httpx.MockTransport(_handler(calls))
-    client = CofferClient(
-        wallet_key="0x" + "22" * 32, max_payment_usd_atomic=999, payment_sender=fake_sender
-    )
+    client = CofferClient(wallet_key="0x" + "22" * 32, max_payment_usd_atomic=999, payment_sender=fake_sender)
     client._http = httpx.AsyncClient(transport=transport)
     resp = await client.get("https://api.test/paid")
     await client.aclose()
@@ -137,9 +135,7 @@ async def test_verify_failure_does_not_replay() -> None:
             return httpx.Response(200, json={"verified": False, "reason": "needs_facilitator"})
         return _402_response()
 
-    client = CofferClient(
-        wallet_key="0x" + "22" * 32, payment_sender=lambda a, b, c, d: _fake_ok(a, b, c, d)
-    )
+    client = CofferClient(wallet_key="0x" + "22" * 32, payment_sender=lambda a, b, c, d: _fake_ok(a, b, c, d))
     client._http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     resp = await client.get("https://api.test/paid")
     await client.aclose()

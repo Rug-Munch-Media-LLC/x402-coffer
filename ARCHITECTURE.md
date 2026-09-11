@@ -180,18 +180,18 @@ verify(payment_id, tx_hash, network, asset, amount_usd)
 ```python
 {
     "verified": bool,
-    "reason": str,              # "" on success, error description on failure
+    "reason": str,  # "" on success, error description on failure
     "settlement": dict | None,  # Settlement receipt (verify-only paths return None)
-    "network": str,             # Normalized CAIP-2 network id
-    "facilitator": str,         # "self-hosted", "solana-rpc", "tron-grid", "coinbase", etc.
-    "signer": str,              # Payer address (when available)
-    "amount_atomic": int,       # Amount in atomic units
-    "asset": str,               # Asset symbol (USDC, USDT, SOL, TRX, etc.)
-    "mint": str,                # Token mint/contract address
-    "contract": str,            # Token contract address (Solana/TRON)
-    "confirmed_at": str,        # ISO-8601 confirmation timestamp
-    "amount_usd": float,        # USD value of payment
-    "block": int | None,        # Block number (when available)
+    "network": str,  # Normalized CAIP-2 network id
+    "facilitator": str,  # "self-hosted", "solana-rpc", "tron-grid", "coinbase", etc.
+    "signer": str,  # Payer address (when available)
+    "amount_atomic": int,  # Amount in atomic units
+    "asset": str,  # Asset symbol (USDC, USDT, SOL, TRX, etc.)
+    "mint": str,  # Token mint/contract address
+    "contract": str,  # Token contract address (Solana/TRON)
+    "confirmed_at": str,  # ISO-8601 confirmation timestamp
+    "amount_usd": float,  # USD value of payment
+    "block": int | None,  # Block number (when available)
 }
 ```
 

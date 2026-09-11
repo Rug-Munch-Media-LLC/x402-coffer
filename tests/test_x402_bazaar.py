@@ -64,9 +64,7 @@ def test_catalog_record_and_browse() -> None:
         "network": "eip155:8453",
         "asset": "USDC",
         "maxAmountRequired": "1000",
-        "extra": {
-            "extensions": {"bazaar": declare_query_discovery("GET", query_params={"q": "str"})}
-        },
+        "extra": {"extensions": {"bazaar": declare_query_discovery("GET", query_params={"q": "str"})}},
     }
     assert cat.record_from_accepts("GET /weather", entry) is True
     assert len(cat) == 1

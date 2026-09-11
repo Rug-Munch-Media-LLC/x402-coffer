@@ -740,7 +740,7 @@ def asset_to_atomic(
     else:
         decimals = ASSET_DECIMALS.get(asset.upper(), 6)
     unit_usd = usd_per_unit_for(asset) or 1.0
-    return int(round(amount_usd / unit_usd * (10**decimals)))
+    return round(amount_usd / unit_usd * (10**decimals))
 
 
 def flatten_supported_assets() -> list[dict[str, Any]]:
@@ -969,7 +969,9 @@ def build_multi_asset_accepts(
                         "decimals": entry.get("decimals", 6),
                         "priceUsd": price_usd,
                         "usdPerUnit": unit_usd,
-                        "usdPerUnitSource": ("stablecoin" if asset in _STABLECOIN_ASSETS else "static-default"),
+                        "usdPerUnitSource": (
+                            "stablecoin" if asset in _STABLECOIN_ASSETS else "static-default"
+                        ),
                     },
                 }
             )

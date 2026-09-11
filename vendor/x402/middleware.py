@@ -73,7 +73,7 @@ _HEADER_X_PAYMENT_REQUIRED = "X-Payment-Required"
 _HEADER_X_PAYMENT_OPTIONS = "X-Payment-Options"
 
 
-class PaymentRequired(Exception):  # noqa: N818 (x402 spec name: HTTP 402 Payment Required)
+class PaymentRequired(Exception):
     """Raised when a payment is due and no framework adapter can render it.
 
     Carries the spec-compliant 402 ``body`` (JSON-serializable dict) and
@@ -235,7 +235,9 @@ class X402Middleware:
             await self.app(scope, receive, send)
             return
         raw_headers = scope.get("headers") or []
-        headers = {str(name.decode("latin-1")).lower(): str(value.decode("latin-1")) for name, value in raw_headers}
+        headers = {
+            str(name.decode("latin-1")).lower(): str(value.decode("latin-1")) for name, value in raw_headers
+        }
         caller_key = _caller_key_from_scope(scope)
         if self._gate.is_paid(headers.get("x-payment-id", ""), caller_key):
             await self.app(scope, receive, send)
@@ -332,7 +334,9 @@ def init_flask(
     Duck-typed on purpose: Flask is an optional dependency, so this does not
     import it. Returns the app for chaining.
     """
-    app.wsgi_app = X402WSGIMiddleware(app.wsgi_app, free_paths=free_paths, handler=handler, multi_asset=multi_asset)
+    app.wsgi_app = X402WSGIMiddleware(
+        app.wsgi_app, free_paths=free_paths, handler=handler, multi_asset=multi_asset
+    )
     return app
 
 

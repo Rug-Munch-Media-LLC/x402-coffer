@@ -118,7 +118,6 @@ _TRANSFER_FROM_SELECTOR = keccak(text="transferFrom(address,address,uint256)")[:
 _DEFAULT_TX_GAS = 100_000
 
 
-
 @dataclass
 class VerifyResult:
     """Outcome of a self-hosted x402 payment verification.

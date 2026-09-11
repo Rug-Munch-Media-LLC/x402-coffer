@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel
@@ -73,7 +74,7 @@ def _warn_deprecated_env_once(alias: str, canonical: str) -> None:
     )
 
 
-def _canonical_env(e: dict[str, str], canonical: str, *aliases: str, default: str = "") -> str:
+def _canonical_env(e: Mapping[str, str], canonical: str, *aliases: str, default: str = "") -> str:
     """Resolve an env var canonical-first; deprecated aliases warn once.
 
     Audit #57: env naming was mixed-case / mixed-prefix (``X402_burst_limit``,

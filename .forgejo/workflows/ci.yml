@@ -191,7 +191,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install tools
         run: |
-          uv tool install gitleaks
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar xz -C /usr/local/bin gitleaks
           uv pip install --system bandit
       - name: Gitleaks (secrets)
         run: gitleaks detect --source . --no-banner --exit-code 1
@@ -251,12 +251,13 @@ jobs:
   links:
     runs-on: docker-x64
     container:
-      image: alpine:3.21
+      # node image: checkout@v4 is a node20 action (alpine had no node).
+      image: node:22-bookworm-slim
     steps:
       - uses: actions/checkout@v4
       - name: Install lychee
         run: |
-          apk add --no-cache curl
+          apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
           curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
       - name: Check links
         run: lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules"
@@ -371,11 +372,15 @@ jobs:
   docker-lint:
     runs-on: docker-x64
     container:
-      image: hadolint/hadolint:latest
+      # node image: checkout@v4 is a node20 action (hadolint image had no node).
+      image: node:22-bookworm-slim
     steps:
       - uses: actions/checkout@v4
       - name: Hadolint Dockerfile
-        run: hadolint --failure-threshold error Dockerfile
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+          curl -sSfL https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 -o /usr/local/bin/hadolint && chmod +x /usr/local/bin/hadolint
+          hadolint --failure-threshold error Dockerfile
 
 # ── Required status checks for branch protection ──────────────
 # In Forgejo / GitHub repo settings, require ALL of these on `main`:
