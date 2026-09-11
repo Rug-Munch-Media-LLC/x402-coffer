@@ -258,7 +258,7 @@ jobs:
       - name: Install lychee
         run: |
           apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
-          curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
+          curl -sSfL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.24.2/lychee-x86_64-unknown-linux-musl.tar.gz | tar -xz -C /usr/local/bin --strip-components=1
       - name: Check links
         run: lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules"
 

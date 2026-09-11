@@ -303,7 +303,7 @@ All verification attempts (success and failure) are structured-logged:
   "verified": true,
   "facilitator": "self-hosted",
   "amount_usd": 0.001,
-  "caller_key": "10.0.0.1",
+  "caller_key": "agent-7f3a91c2",
   "elapsed_ms": 45.2
 }
 ```

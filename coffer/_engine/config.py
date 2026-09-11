@@ -20,8 +20,8 @@ env parsing so the container cannot fail on an undeclared optional package.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
