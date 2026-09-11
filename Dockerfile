@@ -11,6 +11,9 @@ WORKDIR /build
 
 RUN pip install --upgrade pip setuptools wheel hatchling
 COPY pyproject.toml ./
+# hatchling validates package metadata at build time: pyproject references
+# README.md (readme) and LICENSE (license file) — both must be present.
+COPY README.md LICENSE ./
 COPY coffer ./coffer
 COPY coffer_client ./coffer_client
 COPY vendor ./vendor
