@@ -266,9 +266,14 @@ jobs:
           # design (lychee cannot auth to it). docs/x402-official-spec: vendored
           # upstream docs whose root-relative links resolve on the upstream
           # docs site, not in this checkout. Neither is a dead link in OUR docs.
+          # --exclude-path filters FILES (vendored/ignored dirs); --exclude
+          # filters URLs only (private host — unauthenticated 404 by design).
           lychee --no-progress --accept 200,204,301,302,304 "**/*.md" "**/*.rst" \
-            --exclude ".venv" --exclude "__pycache__" --exclude "dist" --exclude "node_modules" \
-            --exclude "git.rugmunch.io" --exclude "docs/x402-official-spec"
+            --exclude-path ".venv" --exclude-path "__pycache__" --exclude-path "dist" \
+            --exclude-path "node_modules" --exclude-path "docs/x402-official-spec" \
+            --exclude "git.rugmunch.io" \
+            --exclude "^https://docs.rugmunch.io" \
+            --exclude "^https://rugmunch.io"
 
   # ── Build + SBOM + Sigstore ─────────────────────────────────
   build:

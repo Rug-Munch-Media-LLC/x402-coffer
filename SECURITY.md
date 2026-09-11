@@ -121,7 +121,7 @@ If you believe you have found a security vulnerability in Coffer, please report 
 
 **DO NOT** report vulnerabilities through public GitHub issues, discussions, or pull requests.
 
-1. Open a [GitHub Security Advisory](https://github.com/RugMunchMedia/x402-coffer/security/advisories/new)
+1. Open a [Security Advisory](https://git.rugmunch.io/RugMunchMedia/x402-coffer/security/advisories/new)
 2. Or email: `admin@rugmunch.io` (if you prefer encrypted communication)
 
 Include as much detail as possible:
