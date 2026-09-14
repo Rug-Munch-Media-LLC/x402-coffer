@@ -4,7 +4,7 @@
 # (coffer/ + coffer_client/ + vendor/ per [tool.hatch.build.targets.wheel])
 # and serves the /v1/x402 HTTP surface via uvicorn.
 # ─────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /build
@@ -20,7 +20,7 @@ COPY vendor ./vendor
 RUN pip wheel --no-deps --wheel-dir /wheels .
 
 # ── Runtime image ─────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     X402_HOST=0.0.0.0 X402_PORT=8001
 
