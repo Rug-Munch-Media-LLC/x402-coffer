@@ -6,7 +6,9 @@
 # the command shell; node-based children (pyright/tsserver) can survive as
 # orphans — the host cron reaper (/root/scripts/reap-stale-tools.sh, every
 # 15 min) kills anything orphaned or older than 20 min. Never remove this.
-timeout: 600
+# 2026-09-23: lefthook 2.x rejects the v1 scalar `timeout:` key; per-command
+# timeouts are duration strings (e.g. `timeout: 180s`). Hang backstop for
+# orphaned children = the reaper cron described above.
 #
 # This single config handles ALL repo types via glob patterns:
 #   *.py              -> ruff, vulture, radon, interrogate, pip-audit, semgrep, pyright (Python repos)
