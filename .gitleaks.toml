@@ -88,6 +88,7 @@ commits = [
   "79e0b0afb46318f6564b703a3ba2e6bfcac351af",
 ]
 paths = [
+  '''\.methodology-patterns''',
   # Pre-commit methodology check: detection patterns (scanner, not leak)
   '''scripts/pre-commit-methodology-check\.sh''',
   '''node_modules/''',
