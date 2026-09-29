@@ -414,11 +414,7 @@ pre-push:
     # -- SBOM vulnerability match (UNIVERSAL, advisory) ---------
     grype-sbom:
       run: |
-        if command -v grype >/dev/null 2>&1 && command -v syft >/dev/null 2>&1; then
-          syft dir:. -o cyclonedx-json=/tmp/sbom-push.json 2>/dev/null && \
-            grype sbom:/tmp/sbom-push.json --fail-on high 2>/dev/null | tail -15 || \
-            echo "[grype] advisory at push — CI blocks on high+"
-        fi
+        bash /srv/work/repos/fleet-infra/scripts/security/sbom-push-scan.sh
 
 commit-msg:
   commands:
