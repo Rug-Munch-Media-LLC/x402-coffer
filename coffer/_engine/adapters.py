@@ -1,9 +1,10 @@
 """HTTP adapters that gate requests behind x402 payments.
 
-Owns the replay short-circuit (``X-Payment-ID``), the ASGI
-:class:`X402Middleware`, and the ``require_payment`` decorator. Body/header
-construction lives in :mod:`app.domain.x402.body`; the verified-payment store
-lives in :mod:`app.domain.x402.store`.
+One gate (``gate.authorize_payment``), one challenge builder
+(``challenge.build_attested_challenge``). Request: ``PAYMENT-SIGNATURE`` (v2) /
+``X-PAYMENT`` (legacy) / ``X-Payment-ID`` (replay). 402: ``PAYMENT-REQUIRED`` +
+machine-readable ``reason`` (+ ``Retry-After``). 2xx: ``PAYMENT-RESPONSE`` and
+``X-PAYMENT-RESPONSE``, identical value.
 """
 
 from __future__ import annotations
@@ -12,17 +13,15 @@ import functools
 import inspect
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from .body import (
-    HEADER_CONTENT_TYPE,
-    payment_required_body,
-    payment_required_headers,
-)
+from .body import HEADER_CONTENT_TYPE
+from .challenge import build_attested_challenge
+from .gate import GateDecision, GatePolicy, authorize_payment
 from .store import PaymentStore, get_default_store
 
 __all__ = [
@@ -37,11 +36,9 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-# Replay header a paid client presents on subsequent requests.
+# Legacy replay header a paid client presents on subsequent requests.
 HEADER_X_PAYMENT_ID = "X-Payment-ID"
 
-
-# ASGI structural types (framework-agnostic).
 Scope = dict[str, Any]
 Message = dict[str, Any]
 Receive = Callable[[], Awaitable[Message]]
@@ -52,9 +49,7 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 def caller_key_from_scope(scope: Scope) -> str:
     """Best-effort caller identity (client IP) from an ASGI scope."""
     client = scope.get("client")
-    if isinstance(client, tuple | list) and client:
-        return str(client[0])
-    return ""
+    return str(client[0]) if isinstance(client, tuple | list) and client else ""
 
 
 def caller_key_from_request(request: Request | None) -> str:
@@ -65,25 +60,34 @@ def caller_key_from_request(request: Request | None) -> str:
 
 
 def is_free_path(path: str, free_paths: set[str]) -> bool:
-    """Prefix match: ``/v1/health`` also frees ``/v1/health/details``.
-
-    Empty prefixes are rejected (they would match everything and disable
-    the payment gate entirely).
-    """
+    """Prefix match: ``/v1/health`` also frees ``/v1/health/details``."""
     return any(prefix and path.startswith(prefix) for prefix in free_paths)
 
 
+def _request_headers(scope: Scope) -> dict[str, str]:
+    def text(value: Any) -> str:
+        return value.decode("latin-1") if isinstance(value, bytes | bytearray) else str(value)
+
+    return {text(k).lower(): text(v) for k, v in (scope.get("headers") or [])}
+
+
+def _injecting_send(send: Send, extra: Mapping[str, str]) -> Send:
+    """Wrap ``send`` so a 2xx carries the settlement receipt headers."""
+
+    async def _send(message: Message) -> None:
+        if message.get("type") == "http.response.start" and extra:
+            headers = list(message.get("headers") or [])
+            headers.extend(
+                (str(k).lower().encode("latin-1"), str(v).encode("latin-1")) for k, v in extra.items()
+            )
+            message = {**message, "headers": headers}
+        await send(message)
+
+    return _send
+
+
 class X402Middleware:
-    """ASGI middleware gating routes behind x402 payments.
-
-    Use with FastAPI / Starlette::
-
-        app.add_middleware(X402Middleware, free_paths={"/health", "/docs"})
-
-    Requests whose path starts with any ``free_paths`` entry pass through.
-    Every other request must present a verified ``X-Payment-ID`` header;
-    unpaid requests get HTTP 402 with the spec header set + JSON body.
-    """
+    """ASGI middleware gating routes behind x402 payments."""
 
     def __init__(
         self,
@@ -91,110 +95,100 @@ class X402Middleware:
         *,
         free_paths: set[str] | None = None,
         store: PaymentStore | None = None,
+        policy: GatePolicy | None = None,
+        operation: str = "api_access",
     ) -> None:
         self.app = app
         self.free_paths: set[str] = set(free_paths or set())
         self.store = store or get_default_store()
-
-    def _is_free(self, path: str) -> bool:
-        return is_free_path(path, self.free_paths)
+        self.policy = policy or GatePolicy(store=self.store, operation=operation)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
         path = str(scope.get("path", ""))
-        if self._is_free(path):
+        if is_free_path(path, self.free_paths):
             await self.app(scope, receive, send)
             return
-        raw_headers = scope.get("headers") or []
-        headers = {
-            str(name.decode("latin-1")).lower(): str(value.decode("latin-1")) for name, value in raw_headers
-        }
-        caller_key = caller_key_from_scope(scope)
-        payment_id = headers.get(HEADER_X_PAYMENT_ID.lower(), "")
-        if self.store.is_paid(payment_id, caller_key=caller_key):
-            await self.app(scope, receive, send)
+        headers = _request_headers(scope)
+        decision = await authorize_payment(
+            headers, policy=self.policy, path=path, caller_key=caller_key_from_scope(scope)
+        )
+        if decision.paid:
+            await self.app(scope, receive, _injecting_send(send, decision.headers))
             return
-        # Spec §2.2: ``resource`` is the FULL URL of the protected resource,
-        # not the bare path (conformance sweep caught this).
         server = headers.get("host", "localhost")
-        scheme = scope.get("scheme", "http")
-        full_url = f"{scheme}://{server}{path}"
-        body = payment_required_body(resource=full_url)
-        response_headers = payment_required_headers(body)
-        log.debug("x402_payment_required", extra={"path": path, "caller": caller_key})
+        await self._send_challenge(send, f"{scope.get('scheme', 'http')}://{server}{path}", decision)
+
+    async def _send_challenge(self, send: Send, resource: str, decision: GateDecision) -> None:
+        body, response_headers = build_attested_challenge(
+            resource=resource, operation=self.policy.operation, reason=decision.reason
+        )
+        if decision.retry_after:
+            response_headers["Retry-After"] = str(decision.retry_after)
         try:
             from .observability import record_challenge
 
-            record_challenge(path, "")
+            record_challenge(resource, decision.reason)
         except Exception:  # noqa: BLE001, S110 — observability never breaks payments
             pass
+        encoded = [
+            (str(k).lower().encode("latin-1"), str(v).encode("latin-1")) for k, v in response_headers.items()
+        ]
         await send(
             {
                 "type": "http.response.start",
-                "status": 402,
-                "headers": [
-                    (HEADER_CONTENT_TYPE.encode("latin-1"), b"application/json"),
-                    *[
-                        (str(k).lower().encode("latin-1"), str(v).encode("latin-1"))
-                        for k, v in response_headers.items()
-                    ],
-                ],
+                "status": decision.status,
+                "headers": [(HEADER_CONTENT_TYPE.encode("latin-1"), b"application/json"), *encoded],
             }
         )
         await send({"type": "http.response.body", "body": json.dumps(body).encode()})
 
 
-def _is_paid_for(request: Request, store: PaymentStore) -> bool:
-    """True when the request carries a verified, caller-bound payment id."""
-    payment_id = request.headers.get(HEADER_X_PAYMENT_ID.lower(), "")
-    return store.is_paid(payment_id, caller_key=caller_key_from_request(request))
-
-
 def require_payment(
     *,
     store: PaymentStore | None = None,
+    policy: GatePolicy | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Decorator: gate a FastAPI route handler behind an x402 payment.
+    """Gate a FastAPI route behind x402 (async handlers use the full gate).
 
-    Paid requests (valid ``X-Payment-ID``) pass through; unpaid requests get a
-    spec-compliant ``JSONResponse(status_code=402)`` with the full header set.
+    Sync handlers keep the legacy ``X-Payment-ID`` check — a synchronous call
+    cannot await a settler, and pretending otherwise would serve unpaid.
     """
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        def _gate(args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool | JSONResponse:
-            active_store = store or get_default_store()
-            request = _find_request(args, kwargs)
-            if request is not None and _is_paid_for(request, active_store):
-                return True
-            body = payment_required_body()
-            log.debug("x402_payment_required", extra={"handler": getattr(fn, "__name__", "")})
-            try:
-                from .observability import record_challenge
-
-                record_challenge(getattr(fn, "__name__", ""), "")
-            except Exception:  # noqa: BLE001, S110 — observability never breaks payments
-                pass
-            return JSONResponse(status_code=402, content=body, headers=payment_required_headers(body))
+        def _refusal(request: Request | None, reason: str) -> JSONResponse:
+            resource = str(request.url) if request is not None else ""
+            body, headers = build_attested_challenge(resource=resource, reason=reason)
+            return JSONResponse(status_code=402, content=body, headers=headers)
 
         if inspect.iscoroutinefunction(fn):
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                result = _gate(args, kwargs)
-                if result is True:
-                    return await fn(*args, **kwargs)
-                return result
+                request = _find_request(args, kwargs)
+                active = policy or GatePolicy(store=store or get_default_store())
+                decision = await authorize_payment(
+                    dict(request.headers) if request is not None else {},
+                    policy=active,
+                    path=str(request.url.path) if request is not None else "",
+                    caller_key=caller_key_from_request(request),
+                )
+                return await fn(*args, **kwargs) if decision.paid else _refusal(request, decision.reason)
 
             return async_wrapper
 
         @functools.wraps(fn)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            result = _gate(args, kwargs)
-            if result is True:
+            request = _find_request(args, kwargs)
+            active_store = store or get_default_store()
+            payment_id = request.headers.get(HEADER_X_PAYMENT_ID.lower(), "") if request is not None else ""
+            if request is not None and active_store.is_paid(
+                payment_id, caller_key=caller_key_from_request(request)
+            ):
                 return fn(*args, **kwargs)
-            return result
+            return _refusal(request, "payment_required")
 
         return sync_wrapper
 

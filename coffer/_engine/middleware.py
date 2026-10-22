@@ -23,17 +23,18 @@ network ids, atomic ``maxAmountRequired`` strings, asset SYMBOL +
 client replays with ``X-Payment-ID`` checked against a caller-bound, TTL'd
 store (mirrors the canonical ``X402Handler`` semantics).
 
-Header convention (fleet-canonical, ONE convention across the domain layer):
+Header convention (ONE implementation across the domain layer):
 
-- replay  : ``X-Payment-ID: <verified payment id>`` (contract §2.3)
-- offer   : ``PAYMENT-REQUIRED`` (base64 body) + ``X-Payment-Required: true``
-  + ``X-Payment-Options: x402`` (contract §2.1)
+- pay     : ``PAYMENT-SIGNATURE`` (v2) or legacy ``X-PAYMENT`` — both decoded by
+  ``payment_headers.decode_payment_header`` (no TODO, no second code path).
+- replay  : ``X-Payment-ID: <verified payment id>`` (still accepted).
+- offer   : ``PAYMENT-REQUIRED`` (attested Base64 body) + ``X-Payment-Required``
+  + ``X-Payment-Options``.
+- receipt : ``PAYMENT-RESPONSE`` and ``X-PAYMENT-RESPONSE``, identical value.
 
-The legacy ``X-Payment: base64({tx_hash, signature})`` client header and the
-v2 ``PAYMENT-SIGNATURE`` header are NOT consumed on the v1 wire — payment
-proofs go through ``POST /v1/x402/verify`` and replay uses ``X-Payment-ID``.
-TODO(v2): additive — accept ``PAYMENT-SIGNATURE`` payloads once the gateway
-migrates to x402Version=2 (see ``models.X402_VERSION``).
+Every decision goes through ``gate.authorize_payment`` (attestation ->
+budget reserve -> settle -> ledger) and every 402 through
+``challenge.build_attested_challenge``.
 
 Single source of truth: network/asset metadata comes from
 ``models.SUPPORTED_NETWORKS`` / ``models.SUPPORTED_ASSETS`` (canonical,
@@ -67,6 +68,8 @@ from .body import (
     payment_required_headers,
     resolve_price_usd,
 )
+from .challenge import build_attested_challenge
+from .gate import GatePolicy, authorize_payment
 from .store import (
     PAYMENT_VALIDITY_SECONDS,
     PaymentStore,
@@ -84,9 +87,12 @@ __all__ = [
     "PAYMENT_VALIDITY_SECONDS",
     "X402_VERSION",
     "ASGIApp",
+    "GatePolicy",
     "PaymentStore",
     "X402Middleware",
     "asset_to_atomic",
+    "authorize_payment",
+    "build_attested_challenge",
     "build_multi_asset_accepts",
     "build_payment_required",
     "caller_key_from_request",

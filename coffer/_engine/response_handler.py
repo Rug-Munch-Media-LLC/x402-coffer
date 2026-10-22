@@ -16,6 +16,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from .attestation import attest_payment_required
 from .facilitator_config import (
     PAYMENT_VALIDITY_SECONDS,
     X402_DEFAULT_ASSET,
@@ -23,6 +24,7 @@ from .facilitator_config import (
     X402_OFFLINE_MODE,
     X402_SELF_FACILITATE,
 )
+from .payment_headers import settlement_header_pairs
 from .pricing import X402_PRICING
 from .scheme import (
     SUPPORTED_ASSETS,
@@ -81,12 +83,18 @@ class ResponseMixin:
             resource,
             multi_asset=multi_asset,
         )
+        # Attest BEFORE encoding so the signed bytes are the wire bytes.
+        attest_payment_required(body)
         headers = {
             "PAYMENT-REQUIRED": _encode_payment_required_body(body),
             "X-Payment-Required": "true",
             "X-Payment-Options": "x402",
         }
         return body, headers
+
+    def settlement_headers(self, receipt: dict[str, Any]) -> dict[str, str]:
+        """Both receipt header names carrying one identical Base64 value."""
+        return settlement_header_pairs(receipt)
 
     def require_payment(
         self,

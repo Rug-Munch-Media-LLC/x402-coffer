@@ -36,6 +36,32 @@
 | `coffer/_engine/budgets.py` | per-key money budget with atomic reserve → settle / release, per-payment cap, `retry_after` | `x402/handler_authorize.py`, `scheme/pricing/manifest.py` |
 | `coffer/_engine/usage_ledger.py` | append-only fsynced JSONL ledger keyed by API key + summary for budget reconciliation | `x402/ledger_store.py`, `handler_state_ledger.py` |
 
+## Wiring (second commit)
+
+One implementation on every path — no second code path, no `TODO(v2)`:
+
+```
+X402Middleware / require_payment (adapters.py)
+        -> gate.authorize_payment(headers, policy)
+             -> gate_settle.pay_with_settler
+                  attestation check  (attestation.verify_payment_required)
+                  budget reserve     (budgets.check_and_reserve)
+                  settler            (verify -> settle, injected)
+                  budget settle/release + one usage_ledger row
+        -> 2xx : payment_headers.settlement_header_pairs  (both names, one value)
+        -> 402 : challenge.build_attested_challenge       (attested, reason, Retry-After)
+```
+
+- `middleware.py`: `TODO(v2)` removed; documents the one gate + one builder.
+- `adapters.py`: `X402Middleware` and the async `require_payment` call the
+  gate; the ASGI `send` is wrapped so a 2xx carries the receipt headers.
+- `response_handler.py`: `create_payment_required` attests the body before
+  encoding; new `settlement_headers(receipt)` returns both header names.
+- Fail-closed budgets: reservation precedes the settler, release on refusal /
+  exception / missing settler, `Retry-After` on exhaustion.
+- Sync `require_payment` handlers keep the legacy `X-Payment-ID` check only —
+  a synchronous call cannot await a settler, and faking it would serve unpaid.
+
 ## Verification
 
 - `tests/test_pry_parity.py` — 12 tests: header decode/reject, dual receipt echo,
@@ -44,8 +70,14 @@
   `FacilitatorRouter` + `X402Handler`.
 - `tests/facilitator_fake.py` — local facilitator double: real EIP-3009 digest +
   `eth_keys` recovery, nonce burn, **no chain broadcast**.
-- `scripts/prove_parity.py` — transcript: 402 (attested) → 200 + receipt echo →
-  replay 402 → underpaid 402 → ledger row.
+- `tests/test_gate_wiring.py` — 12 tests through the real ASGI middleware:
+  attested challenge, receipt echo on 200, release-on-refusal, `Retry-After`
+  on exhaustion, missing settler, settler exception, tampered attestation,
+  legacy `X-Payment-ID`, async decorator, malformed header, amount boundary.
+- `scripts/prove_parity.py` — transcript through the WIRED middleware:
+  402 (attested, `reason=payment_required`) → 200 + both receipt headers →
+  replay 402 (`authorization_already_used`) → underpaid 402
+  (`insufficient_amount`) → ledger `{settled: 1, released: 2}`.
 
 ## Remaining gaps
 
@@ -60,10 +92,12 @@
 3. **Refund/reversal** — `void_payment` frees the gate but writes no negative
    ledger row, so per-key spend is not corrected. Pry records settlement
    reversal. Needs a `refund` outcome + negative amount in `usage_ledger`.
-4. **Settle refusal reasons** — `settle_self_hosted_evm` collapses the
-   facilitator's reason into one generic string, so a client cannot tell
-   `insufficient_amount` from `authorization_already_used`. Verified in the
-   proof transcript; the precise reason is only visible on the facilitator.
+4. **Settle refusal reasons (partial)** — the gate now propagates the reason
+   captured at *verify* time (`insufficient_amount`,
+   `authorization_already_used`) into the 402 body. A refusal that only
+   surfaces during *settle* is still collapsed by `settle_self_hosted_evm`
+   into "self-hosted settle unavailable"; fixing that needs a typed result on
+   the settle path.
 5. **Custom facilitators are not consulted on settle** —
    `register_facilitator` lands in `_custom_facilitators`, read by verify but
    not by `settle_self_hosted_evm` (which uses `_impl_for` /
@@ -71,7 +105,9 @@
    asymmetry.
 6. **Ledger backend** — JSONL, not Postgres. Fine for single-node; a DB
    repository (with a UNIQUE settlement key) is needed for multi-writer.
-7. **Wire-in** — the four modules are additive and not yet called by
-   `middleware.py` / `response_handler.py`. Wiring is the next commit
-   (`middleware` should call `decode_payment_header`, the settle path should
-   emit `settlement_header_pairs`).
+7. **Wire-in — closed.** The middleware, decorator and `X402Handler` share one
+   gate and one challenge builder (see "Wiring" above). Remaining: the
+   `/v1/x402/verify` HTTP route still records payments through
+   `PaymentStore` rather than the gate, so a client that pays via that route
+   and then presents `PAYMENT-SIGNATURE` is verified twice (idempotent, but
+   two ledger rows are possible).
