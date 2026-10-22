@@ -286,7 +286,20 @@ jobs:
       # kaniko performs the validation build in-container: daemonless, no
       # CAP_SYS_ADMIN, no host privilege — same gate, nothing pushed.
     steps:
-      - uses: actions/checkout@v4
+      # git, NOT actions/checkout: kaniko replaces this container's root filesystem
+      # with the target image's base while it builds (measured 2026-10-22: the
+      # checkout, /tmp and /usr/local/bin all disappear). A node action's post-step
+      # would then fail on a filesystem with no node — so this job is shell-only and
+      # the build stays LAST.
+      - name: Checkout (git; no node action in this job)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          git -c http.extraHeader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" \
+            fetch -q --depth 1 origin "${{ github.sha }}"
+          git checkout -q FETCH_HEAD
       - name: Install kaniko (daemonless builder)
         run: |
           apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -294,6 +307,18 @@ jobs:
           curl -sSfL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin crane
           mkdir -p /kaniko
           crane export --platform linux/amd64 gcr.io/kaniko-project/executor:v1.23.2 - | tar -x -C /kaniko --strip-components=1
+      - name: Generate SBOM (SPDX)
+        # Binary syft: sbom-action releases past v0.23.1 need node24
+        # (runner max node20) and action clones are flaky on this runner.
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft dir:. --output spdx-json=${{ env.PRODUCT_SLUG }}-sbom.spdx.json
+
+  # ── SAST (semgrep) ──────────────────────────────────────────
+  # BLOCKING. Mirrors the rmi-backend/rmi-mcp-x402 gate: community rules,
+  # ERROR severity only. False positives are annotated inline with
+  # `nosemgrep` at the finding — never blanket-excluded.
+      # LAST step by construction: it replaces this container's rootfs.
       - name: Build
         # Validation build only — no registry exists (see docker-lint note), so
         # the image is written to a tar and discarded. Same semantics as the
@@ -309,17 +334,7 @@ jobs:
             --tar-path "$WS/${{ env.PRODUCT_SLUG }}.tar" \
             --snapshot-mode redo \
             --verbosity warn
-      - name: Generate SBOM (SPDX)
-        # Binary syft: sbom-action releases past v0.23.1 need node24
-        # (runner max node20) and action clones are flaky on this runner.
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
-          syft dir:. --output spdx-json=${{ env.PRODUCT_SLUG }}-sbom.spdx.json
 
-  # ── SAST (semgrep) ──────────────────────────────────────────
-  # BLOCKING. Mirrors the rmi-backend/rmi-mcp-x402 gate: community rules,
-  # ERROR severity only. False positives are annotated inline with
-  # `nosemgrep` at the finding — never blanket-excluded.
   semgrep:
     runs-on: docker-x64
     container:
