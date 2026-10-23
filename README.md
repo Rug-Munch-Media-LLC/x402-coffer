@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/coffer-x402%20facilitator-2ea44f?style=for-the-badge" alt="Coffer" />
-</p>
+# Coffer — x402 Multichain Payment Facilitator
 
-<h1 align="center">Coffer — x402 Multichain Payment Facilitator</h1>
+> Self-hosted, non-custodial x402 payment facilitator: quote, verify and settle crypto micropayments for any HTTP API.
+
+**License:** [MIT](LICENSE) · **Canonical:** https://git.rugmunch.io/RugMunchMedia/x402-coffer
+**Mirrors:** [GitHub](https://github.com/Rug-Munch-Media-LLC) · [GitLab](https://gitlab.com/rug-munch-media-group) · [Codeberg](https://codeberg.org/RugMunchMedia)
 
 <p align="center">
   <strong>The open-source facilitator for x402 payments — quote, verify, settle across EVM, Solana, and more.</strong><br/>
